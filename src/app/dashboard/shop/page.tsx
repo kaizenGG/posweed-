@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { Search, Plus, Minus, ShoppingCart, X, CreditCard, Wallet, Smartphone, Check, AlertCircle, Printer } from "lucide-react";
+import React, { useState, useEffect, useRef, RefObject } from "react";
+import { Search, Plus, Minus, ShoppingCart, X, CreditCard, Wallet, Smartphone, Check, AlertCircle, Printer, Download, Eye } from "lucide-react";
 import { toast, Toaster } from "react-hot-toast";
 import { useReactToPrint } from "react-to-print";
 
@@ -62,7 +62,13 @@ interface CartItem {
 type PaymentMethod = 'cash' | 'card' | 'promptpay';
 
 // Componente para el ticket de compra
-const TicketTemplate = React.forwardRef<HTMLDivElement, any>(({ saleData, storeInfo, cashReceived, change, paymentMethod }, ref) => {
+const TicketTemplate = React.forwardRef<HTMLDivElement, {
+  saleData: any;
+  storeInfo: any;
+  cashReceived: string;
+  change: number;
+  paymentMethod: PaymentMethod;
+}>(({ saleData, storeInfo, cashReceived, change, paymentMethod }, ref) => {
   const formatDate = (date: Date) => {
     const d = new Date(date);
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
@@ -102,7 +108,7 @@ const TicketTemplate = React.forwardRef<HTMLDivElement, any>(({ saleData, storeI
           <div className="w-1/6 text-right">Total</div>
         </div>
         
-        {saleData?.items.map((item, index) => (
+        {saleData?.items.map((item: any, index: number) => (
           <div key={index} className="flex justify-between text-[9px]">
             <div className="w-1/2 truncate">{item.product.name}</div>
             <div className="w-1/6 text-right">{item.price.toFixed(2)}</div>
@@ -198,12 +204,23 @@ export default function ShopPage() {
     message: ''
   });
   
+  // Estado para vista previa de ticket
+  const [showTicketPreview, setShowTicketPreview] = useState(false);
+  
   // Ref para el ticket y función de impresión
-  const ticketRef = useRef();
-  const [ticketData, setTicketData] = useState(null);
+  const ticketRef = useRef<HTMLDivElement>(null);
+  const [ticketData, setTicketData] = useState<any>(null);
   
   const handlePrint = useReactToPrint({
     content: () => ticketRef.current,
+    documentTitle: 'PosWeed-Ticket',
+    onAfterPrint: () => {
+      toast.success('Ticket impreso con éxito');
+    },
+    onPrintError: () => {
+      toast.error('Error al imprimir. Intente de nuevo.');
+      setShowTicketPreview(true);
+    }
   });
   
   // Cargar productos y categorías al montar el componente
@@ -549,6 +566,11 @@ export default function ShopPage() {
     }
   };
   
+  // Función para mostrar la vista previa del ticket
+  const showTicketModal = () => {
+    setShowTicketPreview(true);
+  };
+  
   return (
     <div className="flex h-screen relative">
       {/* Componente Toaster para notificaciones toast */}
@@ -701,6 +723,22 @@ export default function ShopPage() {
                     <X className="h-3 w-3" />
                   </button>
                   
+                  {item.product.imageUrl ? (
+                    <div className="w-10 h-10 bg-white rounded overflow-hidden mr-2">
+                      <img 
+                        src={item.product.imageUrl} 
+                        alt={item.product.name}
+                        className="w-full h-full object-cover" 
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 bg-gray-200 rounded mr-2 flex items-center justify-center">
+                      <span className="text-xl text-gray-400">
+                        {item.product.name.charAt(0)}
+                      </span>
+                    </div>
+                  )}
+                  
                   <div className="flex-1 min-w-0 pr-1">
                     <h4 className="font-medium text-gray-900 truncate">{item.product.name}</h4>
                     <p className="text-green-600 text-xs">${item.product.price.toFixed(2)}</p>
@@ -768,13 +806,22 @@ export default function ShopPage() {
           </div>
           
           {ticketData && (
-            <button
-              onClick={handlePrint}
-              className="w-full mt-2 flex items-center justify-center py-2 bg-gray-700 text-white rounded-lg font-medium hover:bg-gray-800"
-            >
-              <Printer className="w-4 h-4 mr-2" />
-              Imprimir Ticket
-            </button>
+            <div className="flex space-x-2 mt-2">
+              <button
+                onClick={handlePrint}
+                className="flex-1 py-2 bg-gray-700 text-white rounded-lg font-medium hover:bg-gray-800 flex items-center justify-center"
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Imprimir
+              </button>
+              <button
+                onClick={showTicketModal}
+                className="flex-1 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 flex items-center justify-center"
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                Vista Previa
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -914,6 +961,55 @@ export default function ShopPage() {
                 ) : (
                   <span>Confirmar Pago</span>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de vista previa del ticket */}
+      {showTicketPreview && ticketData && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-50 overflow-y-auto p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full animate-in fade-in duration-300 relative flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-gray-900">Vista Previa del Ticket</h3>
+              <button 
+                onClick={() => setShowTicketPreview(false)}
+                className="text-gray-400 hover:text-gray-600 focus:outline-none"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 flex justify-center">
+              <div className="border border-gray-300 shadow-sm">
+                {/* Aquí está el contenido clonado del ticket para vista previa */}
+                <TicketTemplate 
+                  ref={null}
+                  saleData={ticketData.saleData}
+                  storeInfo={ticketData.storeInfo}
+                  cashReceived={ticketData.cashReceived}
+                  change={ticketData.change}
+                  paymentMethod={ticketData.paymentMethod}
+                />
+              </div>
+            </div>
+            
+            <div className="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
+              <button
+                onClick={() => setShowTicketPreview(false)}
+                className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-700"
+              >
+                Cerrar
+              </button>
+              <button
+                onClick={handlePrint}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center"
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Imprimir
               </button>
             </div>
           </div>
