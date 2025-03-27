@@ -22,9 +22,9 @@ export default function LoginPage() {
         const response = await fetch("/api/auth/auth-debug");
         const data = await response.json();
         setDebug(data);
-        console.log("🔍 [DEBUG] Configuración de autenticación:", data);
+        console.log("🔍 [DEBUG-TIENDA] Configuración de autenticación:", data);
       } catch (err) {
-        console.error("🔴 [DEBUG] Error al verificar configuración:", err);
+        console.error("🔴 [DEBUG-TIENDA] Error al verificar configuración:", err);
         setDebug({error: String(err)});
       }
     }
@@ -32,7 +32,7 @@ export default function LoginPage() {
     checkConfig();
     
     // Logs adicionales
-    console.log("🔍 [LOGIN] Verificando si ya existe una sesión activa...");
+    console.log("🔍 [TIENDA-LOGIN] Verificando si ya existe una sesión activa...");
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -40,37 +40,50 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     
-    console.log("[Cliente Tienda] Intentando login para:", username);
+    // Aseguramos que el username no tenga espacios extras
+    const cleanUsername = username.trim();
+    
+    console.log("🏪 [LOGIN-TIENDA] Intentando login para tienda:", cleanUsername);
+    console.log("📋 [LOGIN-TIENDA] Longitud de contraseña:", password.length);
     
     try {
       // Intento de inicio de sesión con signIn de NextAuth
       const authResult = await signIn("credentials", {
         redirect: false,
-        username, // Nombre de usuario de la tienda
+        username: cleanUsername, // Nombre de usuario de la tienda limpio
         password
       });
       
-      console.log("[Cliente Tienda] Resultado de login NextAuth:", authResult);
+      console.log("🔄 [LOGIN-TIENDA] Resultado de login NextAuth:", 
+        authResult ? `OK: ${authResult.ok}, Error: ${authResult.error || 'ninguno'}` : "No hay resultado");
       
       if (authResult?.error) {
         setError(authResult.error);
-        console.error("[Cliente Tienda] Error en login:", authResult.error);
+        console.error("❌ [LOGIN-TIENDA] Error en login:", authResult.error);
       } else if (authResult?.ok) {
-        console.log("[Cliente Tienda] Login exitoso, redirigiendo...");
+        console.log("✅ [LOGIN-TIENDA] Login exitoso, redirigiendo al dashboard...");
         
         // Esperar un momento antes de redirigir para asegurar que la sesión se establezca
         setTimeout(() => {
-          // Usar push con revalidación completa para forzar recarga de datos
-          router.push('/dashboard');
-          
-          // Como respaldo, también intentamos con location.href
-          setTimeout(() => {
+          try {
+            // Usar push con revalidación completa para forzar recarga de datos
+            router.push('/dashboard');
+            console.log("🚀 [LOGIN-TIENDA] Redirección iniciada con router.push");
+            
+            // Como respaldo, también intentamos con location.href después de un breve tiempo
+            setTimeout(() => {
+              console.log("🔄 [LOGIN-TIENDA] Aplicando redirección de respaldo");
+              window.location.href = '/dashboard';
+            }, 1000);
+          } catch (routerError) {
+            console.error("❌ [LOGIN-TIENDA] Error en redirección con router:", routerError);
+            // Si hay error con el router, usar directamente location
             window.location.href = '/dashboard';
-          }, 500);
-        }, 300);
+          }
+        }, 500);
       }
     } catch (err) {
-      console.error("[Cliente Tienda] Error inesperado en login:", err);
+      console.error("💥 [LOGIN-TIENDA] Error inesperado en login:", err);
       setError("Ocurrió un error inesperado. Por favor intente nuevamente.");
     } finally {
       setLoading(false);
@@ -99,20 +112,17 @@ export default function LoginPage() {
             </div>
           )}
           
-          {/* Panel de depuración (visible solo en desarrollo) */}
-          {process.env.NODE_ENV !== "production" && (
-            <div className="mb-4 rounded border border-blue-400 bg-blue-50 p-3 text-blue-700 text-xs">
-              <h3 className="font-bold">Información de depuración:</h3>
-              <pre className="mt-2 overflow-auto">
-                {JSON.stringify(debug, null, 2)}
-              </pre>
-            </div>
-          )}
+          {/* Panel de depuración (visible siempre durante pruebas) */}
+          <div className="mb-4 rounded border border-blue-400 bg-blue-50 p-3 text-blue-700 text-xs">
+            <h3 className="font-bold">Información de depuración:</h3>
+            <p>Para iniciar sesión como tienda, usa el nombre de tienda exacto y la contraseña configurada.</p>
+            <p className="mt-1">Si tienes problemas, verifica la consola del navegador.</p>
+          </div>
           
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="username">
-                Nombre de usuario o Email
+                Nombre de usuario de la tienda
               </label>
               <input
                 id="username"
@@ -153,12 +163,6 @@ export default function LoginPage() {
               
               <div className="text-center text-sm text-gray-600">
                 ¿Eres administrador? <Link href="/login-admin" className="text-green-600 hover:underline">Inicia sesión aquí</Link>
-              </div>
-              
-              <div className="text-center text-xs text-gray-500 mt-4">
-                <p>Para iniciar sesión como tienda, utiliza:</p>
-                <p>Usuario: [nombredetienda]</p>
-                <p>Contraseña: [contraseña de tienda]</p>
               </div>
             </div>
           </form>

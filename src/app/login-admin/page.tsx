@@ -20,7 +20,7 @@ export default function LoginAdmin() {
   useEffect(() => {
     const checkExistingSession = async () => {
       try {
-        console.log("🔍 [LOGIN-ADMIN] Verificando si ya existe una sesión activa...");
+        console.log("🔍 [ADMIN-LOGIN] Verificando si ya existe una sesión activa...");
         
         // Obtener el token de las cookies o localStorage
         const token = localStorage.getItem("session_token") || 
@@ -39,21 +39,21 @@ export default function LoginAdmin() {
           const data = await response.json();
           
           if (response.ok && data.success) {
-            console.log("✅ [LOGIN-ADMIN] Sesión activa detectada, redirigiendo al dashboard...");
+            console.log("✅ [ADMIN-LOGIN] Sesión activa detectada, redirigiendo al dashboard...");
             router.replace("/dashboard-admin");
             return;
           } else {
-            console.log("❌ [LOGIN-ADMIN] Token existente, pero inválido:", data.message);
+            console.log("❌ [ADMIN-LOGIN] Token existente, pero inválido:", data.message);
             // Limpiar token inválido
             localStorage.removeItem("session_token");
             document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
             document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
           }
         } else {
-          console.log("📝 [LOGIN-ADMIN] No se encontró sesión activa, mostrando formulario de login");
+          console.log("📝 [ADMIN-LOGIN] No se encontró sesión activa, mostrando formulario de login");
         }
       } catch (error) {
-        console.error("💥 [LOGIN-ADMIN] Error al verificar la sesión:", error);
+        console.error("💥 [ADMIN-LOGIN] Error al verificar la sesión:", error);
       } finally {
         setCheckingAuth(false);
       }
@@ -70,67 +70,65 @@ export default function LoginAdmin() {
         const response = await fetch("/api/auth/auth-debug");
         const data = await response.json();
         setDebug(data);
-        console.log("🔍 [DEBUG] Configuración de autenticación:", data);
+        console.log("🔍 [DEBUG-ADMIN] Configuración de autenticación:", data);
       } catch (err) {
-        console.error("🔴 [DEBUG] Error al verificar configuración:", err);
+        console.error("🔴 [DEBUG-ADMIN] Error al verificar configuración:", err);
         setDebug({error: String(err)});
       }
     }
     
     checkConfig();
-    
-    // Logs adicionales
-    console.log("🔍 [LOGIN-ADMIN] Verificando si ya existe una sesión activa...");
   }, []);
-  
-  // Función para establecer cookies de manera segura
-  const setCookie = (name: string, value: string, days: number) => {
-    let expires = "";
-    if (days) {
-      const date = new Date();
-      date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-      expires = "; expires=" + date.toUTCString();
-    }
-    // Importante: NO usar httpOnly aquí ya que estamos en el cliente
-    document.cookie = name + "=" + value + expires + "; path=/; SameSite=Lax";
-  };
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError("");
     
-    console.log("[Cliente Admin] Intentando login para administrador:", email);
+    // Limpiar email para evitar espacios
+    const cleanEmail = email.trim();
+    
+    console.log("👑 [ADMIN-LOGIN] Intentando login para administrador:", cleanEmail);
+    console.log("📋 [ADMIN-LOGIN] Longitud de contraseña:", password.length);
     
     try {
       // Intento de inicio de sesión con NextAuth
       const authResult = await signIn("credentials", {
         redirect: false,
-        username: email, // Usar email como username para credenciales
+        username: cleanEmail, // Usar email como username para credenciales
         password
       });
       
-      console.log("[Cliente Admin] Resultado de login NextAuth:", authResult);
+      console.log("🔄 [ADMIN-LOGIN] Resultado de login NextAuth:", 
+        authResult ? `OK: ${authResult.ok}, Error: ${authResult.error || 'ninguno'}` : "No hay resultado");
       
       if (authResult?.error) {
         setError(authResult.error);
-        console.error("[Cliente Admin] Error en login:", authResult.error);
+        console.error("❌ [ADMIN-LOGIN] Error en login:", authResult.error);
       } else if (authResult?.ok) {
-        console.log("[Cliente Admin] Login exitoso, redirigiendo...");
+        console.log("✅ [ADMIN-LOGIN] Login exitoso, redirigiendo al dashboard admin...");
         
         // Esperar un momento antes de redirigir para asegurar que la sesión se establezca
         setTimeout(() => {
-          // Usar push con revalidación completa para forzar recarga de datos
-          router.push('/dashboard-admin');
-          
-          // Como respaldo, también intentamos con location.href
-          setTimeout(() => {
+          try {
+            // Usar push con revalidación completa para forzar recarga de datos
+            router.push('/dashboard-admin');
+            console.log("🚀 [ADMIN-LOGIN] Redirección iniciada con router.push");
+            
+            // Como respaldo, también intentamos con location.href
+            setTimeout(() => {
+              console.log("🔄 [ADMIN-LOGIN] Aplicando redirección de respaldo");
+              window.location.href = '/dashboard-admin';
+            }, 1000);
+          } catch (routerError) {
+            console.error("❌ [ADMIN-LOGIN] Error en redirección con router:", routerError);
+            // Si hay error con el router, usar directamente location
             window.location.href = '/dashboard-admin';
-          }, 500);
-        }, 300);
+          }
+        }, 500);
       }
     } catch (err) {
-      console.error("[Cliente Admin] Error inesperado en login:", err);
+      console.error("💥 [ADMIN-LOGIN] Error inesperado en login:", err);
       setError("Ocurrió un error inesperado. Por favor intente nuevamente.");
     } finally {
       setIsLoading(false);
@@ -173,15 +171,12 @@ export default function LoginAdmin() {
             </div>
           )}
           
-          {/* Panel de depuración (visible solo en desarrollo) */}
-          {process.env.NODE_ENV !== "production" && (
-            <div className="mb-4 rounded border border-blue-400 bg-blue-50 p-3 text-blue-700 text-xs">
-              <h3 className="font-bold">Información de depuración:</h3>
-              <pre className="mt-2 overflow-auto">
-                {JSON.stringify(debug, null, 2)}
-              </pre>
-            </div>
-          )}
+          {/* Panel de depuración (visible siempre durante pruebas) */}
+          <div className="mb-4 rounded border border-blue-400 bg-blue-50 p-3 text-blue-700 text-xs">
+            <h3 className="font-bold">Información de depuración:</h3>
+            <p>Para iniciar sesión como administrador, usa tu email completo y contraseña.</p>
+            <p className="mt-1">Si tienes problemas, verifica la consola del navegador.</p>
+          </div>
           
           <div className="mt-8">
             <form className="space-y-6" onSubmit={handleSubmit}>
