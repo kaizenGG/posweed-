@@ -92,6 +92,13 @@ export default function LoginAdmin() {
     console.log("📋 [ADMIN-LOGIN] Longitud de contraseña:", password.length);
     
     try {
+      // Limpiar cualquier cookie existente primero para evitar conflictos
+      document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      document.cookie = "next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      document.cookie = "__Secure-next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      localStorage.removeItem("session_token");
+      
       // Intento de inicio de sesión con NextAuth
       const authResult = await signIn("credentials", {
         redirect: false,
@@ -108,28 +115,56 @@ export default function LoginAdmin() {
       } else if (authResult?.ok) {
         console.log("✅ [ADMIN-LOGIN] Login exitoso, redirigiendo al dashboard admin...");
         
-        // Guardar token en localStorage como respaldo
-        if (authResult.url) {
-          const token = new URL(authResult.url).searchParams.get("callbackUrl");
-          if (token) {
-            localStorage.setItem("session_token", token);
-            console.log("🔑 [ADMIN-LOGIN] Token guardado en localStorage");
+        // Usar el método de API fetch para obtener un token personalizado
+        try {
+          const apiResponse = await fetch("/api/auth/verify", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ 
+              email: cleanEmail,
+              password: password
+            }),
+          });
+          
+          if (apiResponse.ok) {
+            const data = await apiResponse.json();
+            if (data.token) {
+              // Guardar el token en localStorage y cookies manualmente
+              localStorage.setItem("session_token", data.token);
+              document.cookie = `session_token=${data.token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+              document.cookie = `auth_token=${data.token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+              console.log("🔑 [ADMIN-LOGIN] Token personalizado guardado");
+            }
           }
+        } catch (apiError) {
+          console.error("❌ [ADMIN-LOGIN] Error al obtener token personalizado:", apiError);
         }
         
         // Manualmente establecer cookies para asegurar que estén presentes
         const setSessionCookie = () => {
           try {
-            // Obtener la cookie que NextAuth debería haber establecido
-            const nextAuthCookie = document.cookie
-              .split('; ')
-              .find(row => row.startsWith('next-auth.session-token=') || row.startsWith('__Secure-next-auth.session-token='));
+            // Intentar obtener el token de múltiples fuentes
+            let token = localStorage.getItem("session_token");
             
-            if (nextAuthCookie) {
-              const token = nextAuthCookie.split('=')[1];
-              // Crear nuestra cookie personalizada con el mismo valor
+            if (!token) {
+              // Buscar en las cookies de NextAuth
+              const nextAuthCookie = document.cookie
+                .split('; ')
+                .find(row => row.startsWith('next-auth.session-token=') || 
+                             row.startsWith('__Secure-next-auth.session-token='));
+              
+              if (nextAuthCookie) {
+                token = nextAuthCookie.split('=')[1];
+              }
+            }
+            
+            if (token) {
+              // Crear cookies personalizadas con el token
               document.cookie = `session_token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
               document.cookie = `auth_token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+              localStorage.setItem("session_token", token);
               console.log("🍪 [ADMIN-LOGIN] Cookies personalizadas establecidas manualmente");
               return true;
             }
@@ -142,10 +177,15 @@ export default function LoginAdmin() {
         
         // Intentar establecer cookies y esperar un momento antes de redirigir
         setSessionCookie();
+        
+        // Redirigir después de un pequeño retraso para permitir que las cookies se establezcan
         setTimeout(() => {
           try {
             // Intentar establecer cookies nuevamente como segunda verificación
             setSessionCookie();
+            
+            console.log("🔄 [ADMIN-LOGIN] Verificando cookies antes de redirigir:");
+            console.log(document.cookie);
             
             // Usar push con revalidación completa para forzar recarga de datos
             router.push('/dashboard-admin');
@@ -163,7 +203,7 @@ export default function LoginAdmin() {
             // Si hay error con el router, usar directamente location
             window.location.href = '/dashboard-admin';
           }
-        }, 500);
+        }, 1000);
       }
     } catch (err) {
       console.error("💥 [ADMIN-LOGIN] Error inesperado en login:", err);

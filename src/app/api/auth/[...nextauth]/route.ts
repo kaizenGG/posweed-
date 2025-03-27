@@ -17,7 +17,7 @@ const modifiedOptions = {
         sameSite: "lax" as "lax",
         path: "/",
         secure: process.env.NODE_ENV === "production",
-        domain: process.env.NODE_ENV === "production" ? ".vercel.app" : undefined, // Para producción en Vercel
+        domain: undefined, // Eliminar el dominio para permitir que se cree en el dominio actual
         maxAge: 30 * 24 * 60 * 60 // 30 días
       }
     },
@@ -28,7 +28,7 @@ const modifiedOptions = {
         sameSite: "lax" as "lax",
         path: "/",
         secure: process.env.NODE_ENV === "production",
-        domain: process.env.NODE_ENV === "production" ? ".vercel.app" : undefined
+        domain: undefined
       }
     },
     csrfToken: {
@@ -38,7 +38,7 @@ const modifiedOptions = {
         sameSite: "lax" as "lax",
         path: "/",
         secure: process.env.NODE_ENV === "production",
-        domain: process.env.NODE_ENV === "production" ? ".vercel.app" : undefined
+        domain: undefined
       }
     }
   },

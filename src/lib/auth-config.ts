@@ -3,11 +3,12 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import prisma from "./prisma";
 import bcrypt from "bcrypt";
 import { UserRole } from "@prisma/client";
+import { User } from "next-auth";
 
 // Definir tipo para los datos de usuario extendidos que usamos en la autenticación
-interface ExtendedUser {
+interface ExtendedUser extends User {
   id: string;
-  name?: string | null;
+  name: string | null;
   email: string;
   role: UserRole;
   image?: string | null;
@@ -34,7 +35,7 @@ export const authOptions: NextAuthOptions = {
         username: { label: "Username/Email", type: "text" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials, req): Promise<ExtendedUser | null> {
+      async authorize(credentials, req) {
         console.log("🔐 [AUTH] Authorize llamado con credenciales:", credentials ? JSON.stringify({
           username: credentials.username,
           passwordLength: credentials.password?.length || 0
@@ -83,10 +84,10 @@ export const authOptions: NextAuthOptions = {
             return {
               id: admin.id,
               email: admin.email,
-              name: admin.name,
+              name: admin.name || admin.email.split('@')[0], // Asegurar nombre no nulo
               role: admin.role,
               image: admin.image
-            };
+            } as ExtendedUser;
           } catch (error) {
             console.error("💥 [AUTH] Error en login de administrador:", error);
             throw new Error("Error al verificar credenciales de administrador");
@@ -101,7 +102,7 @@ export const authOptions: NextAuthOptions = {
                 id: true,
                 name: true,
                 username: true,
-                hashedPassword: true, // Corregido para coincidir con el modelo
+                hashedPassword: true, 
                 status: true,
                 user: {
                   select: {
@@ -138,14 +139,14 @@ export const authOptions: NextAuthOptions = {
             console.log("✅ [AUTH] Login de tienda exitoso:", store.username);
             return {
               id: store.user.id,
-              name: store.user.name,
+              name: store.user.name || store.name, // Asegurar nombre no nulo
               email: store.user.email,
               role: store.user.role,
               image: store.user.image,
               storeId: store.id,
               storeName: store.name,
               storeUsername: store.username
-            };
+            } as ExtendedUser;
           } catch (error) {
             console.error("💥 [AUTH] Error en login de tienda:", error);
             throw new Error("Error al verificar credenciales de tienda");
@@ -155,19 +156,19 @@ export const authOptions: NextAuthOptions = {
     })
   ],
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user }) {
       console.log("🔄 [AUTH] Generando JWT", user ? "con usuario nuevo" : "actualizando existente");
       
       // Si hay un nuevo login, actualizar el token con todos los datos del usuario
       if (user) {
         const extendedUser = user as ExtendedUser;
         token.id = extendedUser.id;
-        token.name = extendedUser.name;
+        token.name = extendedUser.name || ''; // Evitar asignar null
         token.email = extendedUser.email;
         token.role = extendedUser.role;
         
         // Añadir datos de tienda si existen
-        if ('storeId' in extendedUser) {
+        if ('storeId' in extendedUser && extendedUser.storeId) {
           token.storeId = extendedUser.storeId;
           token.storeName = extendedUser.storeName;
           token.storeUsername = extendedUser.storeUsername;
@@ -193,12 +194,12 @@ export const authOptions: NextAuthOptions = {
       if (token && session.user) {
         // Copiar datos principales
         session.user.id = token.id as string;
-        session.user.name = token.name as string;
+        session.user.name = token.name as string || ''; // Evitar asignar null
         session.user.email = token.email as string;
         session.user.role = token.role as UserRole;
         
         // Añadir datos de tienda si existen
-        if ('storeId' in token) {
+        if ('storeId' in token && token.storeId) {
           session.user.storeId = token.storeId as string;
           session.user.storeName = token.storeName as string;
           session.user.storeUsername = token.storeUsername as string;
