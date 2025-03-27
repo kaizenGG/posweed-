@@ -128,6 +128,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           }
         }
         
+        // Intentar con cookies de NextAuth directamente
+        if (!cookieValue) {
+          cookieValue = getCookie("next-auth.session-token") || getCookie("__Secure-next-auth.session-token");
+          if (cookieValue) {
+            console.log("[Cliente] Usando cookie original de NextAuth");
+            // Recrear nuestras cookies personalizadas
+            document.cookie = `session_token=${cookieValue}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+            document.cookie = `auth_token=${cookieValue}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+          }
+        }
+        
         // Si no está en las cookies, intentar con localStorage
         if (!cookieValue) {
           try {
@@ -136,6 +147,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               console.log("[Cliente] Token recuperado de localStorage");
               // Si se encuentra en localStorage, recrear la cookie
               document.cookie = `session_token=${cookieValue}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+              document.cookie = `auth_token=${cookieValue}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
               console.log("[Cliente] Cookie recreada desde localStorage");
             }
           } catch (storageError) {
@@ -165,6 +177,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             // Limpiar todas las formas de almacenamiento
             document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
             document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            document.cookie = "next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            document.cookie = "__Secure-next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
             try { localStorage.removeItem("session_token"); } catch (e) {}
             window.location.href = '/login';
             return;
@@ -174,6 +188,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           
           // Extraer información detallada para diagnóstico
           console.log("[Cliente] Datos completos recibidos:", data);
+          
+          // Establecer nuevamente las cookies para mantenerlas actualizadas
+          document.cookie = `session_token=${cookieValue}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+          document.cookie = `auth_token=${cookieValue}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+          localStorage.setItem("session_token", cookieValue);
           
           // Verificar si hay datos de usuario y si tiene datos de tienda
           // No importa el rol, lo importante es que tenga los datos de la tienda
@@ -187,41 +206,36 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             // Limpiar todas las formas de almacenamiento
             document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
             document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            document.cookie = "next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            document.cookie = "__Secure-next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
             try { localStorage.removeItem("session_token"); } catch (e) {}
             window.location.href = '/login';
             return;
           }
-
-          console.log("[Cliente] Verificación exitosa para tienda:", data.user.storeName || "sin nombre");
-
-          // Detectar si es un acceso de administrador
-          const isAdminAccess = data.user.adminAccess === true;
-          console.log(
-            isAdminAccess 
-              ? "[Cliente] ⚠️ Acceso como administrador detectado" 
-              : "[Cliente] Acceso normal de tienda"
-          );
-
+          
+          // Si todo está bien, configurar el estado con los datos del usuario
           setUserData({
             name: data.user.name || "Usuario",
             storeName: data.user.storeName || "Tienda",
-            isAdminAccess,
-            adminName: isAdminAccess ? data.user.name : undefined
+            isAdminAccess: data.user.adminAccess === true,
+            adminName: data.user.adminAccess === true ? data.user.name : undefined
           });
-          setIsLoading(false);
-        } catch (fetchError) {
-          console.error("[Cliente] Error al comunicarse con el servidor:", fetchError);
+        } catch (error) {
+          console.error("[Cliente] Error al verificar token:", error);
           window.location.href = '/login';
           return;
         }
       } catch (error) {
-        console.error("[Cliente] Error general de autenticación:", error);
+        console.error("[Cliente] Error general al verificar autenticación:", error);
         window.location.href = '/login';
+        return;
+      } finally {
+        setIsLoading(false);
       }
     };
 
     verifyAuth();
-  }, []);
+  }, [pathname]);
 
   // Función para cerrar sesión
   const handleSignOut = async () => {

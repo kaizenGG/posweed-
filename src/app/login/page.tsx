@@ -13,6 +13,57 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [debug, setDebug] = useState<any>({});
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  // Verificar si ya hay una sesión activa al cargar la página
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      try {
+        console.log("🔍 [TIENDA-LOGIN] Verificando si ya existe una sesión activa...");
+        
+        // Obtener el token de las cookies o localStorage
+        const token = localStorage.getItem("session_token") || 
+                     document.cookie.split('; ').find(row => row.startsWith('session_token='))?.split('=')[1] ||
+                     document.cookie.split('; ').find(row => row.startsWith('next-auth.session-token='))?.split('=')[1] ||
+                     document.cookie.split('; ').find(row => row.startsWith('__Secure-next-auth.session-token='))?.split('=')[1];
+        
+        if (token) {
+          // Verificar el token con el servidor
+          const response = await fetch("/api/auth/verify", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ token }),
+          });
+          
+          const data = await response.json();
+          
+          if (response.ok && data.success) {
+            console.log("✅ [TIENDA-LOGIN] Sesión activa detectada, redirigiendo al dashboard...");
+            router.replace("/dashboard");
+            return;
+          } else {
+            console.log("❌ [TIENDA-LOGIN] Token existente, pero inválido:", data.message);
+            // Limpiar token inválido
+            localStorage.removeItem("session_token");
+            document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            document.cookie = "next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            document.cookie = "__Secure-next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+          }
+        } else {
+          console.log("📝 [TIENDA-LOGIN] No se encontró sesión activa, mostrando formulario de login");
+        }
+      } catch (error) {
+        console.error("💥 [TIENDA-LOGIN] Error al verificar la sesión:", error);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+    
+    checkExistingSession();
+  }, [router]);
 
   // Función para verificar la configuración y mostrar información de depuración
   useEffect(() => {
@@ -30,9 +81,6 @@ export default function LoginPage() {
     }
     
     checkConfig();
-    
-    // Logs adicionales
-    console.log("🔍 [TIENDA-LOGIN] Verificando si ya existe una sesión activa...");
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -63,32 +111,82 @@ export default function LoginPage() {
       } else if (authResult?.ok) {
         console.log("✅ [LOGIN-TIENDA] Login exitoso, redirigiendo al dashboard...");
         
-        // Esperar un momento antes de redirigir para asegurar que la sesión se establezca
+        // Guardar token en localStorage como respaldo
+        if (authResult.url) {
+          const token = new URL(authResult.url).searchParams.get("callbackUrl");
+          if (token) {
+            localStorage.setItem("session_token", token);
+            console.log("🔑 [TIENDA-LOGIN] Token guardado en localStorage");
+          }
+        }
+        
+        // Manualmente establecer cookies para asegurar que estén presentes
+        const setSessionCookie = () => {
+          try {
+            // Obtener la cookie que NextAuth debería haber establecido
+            const nextAuthCookie = document.cookie
+              .split('; ')
+              .find(row => row.startsWith('next-auth.session-token=') || row.startsWith('__Secure-next-auth.session-token='));
+            
+            if (nextAuthCookie) {
+              const token = nextAuthCookie.split('=')[1];
+              // Crear nuestra cookie personalizada con el mismo valor
+              document.cookie = `session_token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+              document.cookie = `auth_token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+              console.log("🍪 [TIENDA-LOGIN] Cookies personalizadas establecidas manualmente");
+              return true;
+            }
+            return false;
+          } catch (e) {
+            console.error("❌ [TIENDA-LOGIN] Error al establecer cookies:", e);
+            return false;
+          }
+        };
+        
+        // Intentar establecer cookies y esperar un momento antes de redirigir
+        setSessionCookie();
         setTimeout(() => {
           try {
+            // Intentar establecer cookies nuevamente como segunda verificación
+            setSessionCookie();
+            
             // Usar push con revalidación completa para forzar recarga de datos
             router.push('/dashboard');
-            console.log("🚀 [LOGIN-TIENDA] Redirección iniciada con router.push");
+            console.log("🚀 [TIENDA-LOGIN] Redirección iniciada con router.push");
             
             // Como respaldo, también intentamos con location.href después de un breve tiempo
             setTimeout(() => {
-              console.log("🔄 [LOGIN-TIENDA] Aplicando redirección de respaldo");
-              window.location.href = '/dashboard';
+              if (setSessionCookie()) {
+                console.log("🔄 [TIENDA-LOGIN] Aplicando redirección de respaldo");
+                window.location.href = '/dashboard';
+              }
             }, 1000);
           } catch (routerError) {
-            console.error("❌ [LOGIN-TIENDA] Error en redirección con router:", routerError);
+            console.error("❌ [TIENDA-LOGIN] Error en redirección con router:", routerError);
             // Si hay error con el router, usar directamente location
             window.location.href = '/dashboard';
           }
         }, 500);
       }
     } catch (err) {
-      console.error("💥 [LOGIN-TIENDA] Error inesperado en login:", err);
+      console.error("💥 [TIENDA-LOGIN] Error inesperado en login:", err);
       setError("Ocurrió un error inesperado. Por favor intente nuevamente.");
     } finally {
       setLoading(false);
     }
   };
+
+  // Mostrar spinner mientras se verifica la autenticación
+  if (checkingAuth) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Verificando autenticación...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
@@ -101,6 +199,7 @@ export default function LoginPage() {
               width={120}
               height={120}
               className="h-auto"
+              unoptimized
             />
           </div>
           
