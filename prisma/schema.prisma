@@ -10,7 +10,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // La URL debe comenzar con postgres:// o postgresql://
+  // Para Prisma Accelerate, la URL debe comenzar con prisma+postgres://
   url      = env("DATABASE_URL")
 }
 
