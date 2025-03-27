@@ -1,123 +1,102 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import prisma from "./prisma";
-import { compare } from "bcrypt";
+import bcrypt from "bcrypt";
+import { UserRole } from "@prisma/client";
 
 export const authOptions: NextAuthOptions = {
+  debug: true, // Activar modo debug para ver logs detallados
+  session: {
+    strategy: "jwt",
+  },
+  pages: {
+    signIn: "/auth/sign-in",
+    error: "/auth/error",
+  },
   providers: [
     CredentialsProvider({
       name: "credentials",
       credentials: {
-        username: { label: "Username", type: "text" },
+        storeId: { label: "Store ID", type: "text" },
         password: { label: "Password", type: "password" }
       },
-      async authorize(credentials) {
-        try {
-          if (!credentials?.username || !credentials?.password) {
-            console.log("[Auth] Credenciales faltantes");
-            return null;
-          }
+      async authorize(credentials, req) {
+        console.log("Authorize llamado con credenciales:", credentials ? "Sí" : "No");
+        
+        if (!credentials?.storeId || !credentials?.password) {
+          console.log("Credenciales incompletas");
+          throw new Error("Por favor ingrese su ID de tienda y contraseña");
+        }
 
-          // Buscar primero en stores por username
+        try {
+          // Buscar la tienda
           const store = await prisma.store.findUnique({
             where: {
-              username: credentials.username
+              id: credentials.storeId
             },
-            select: {
-              id: true,
-              userId: true,
-              hashedPassword: true
+            include: {
+              user: true
             }
           });
 
-          // Si existe la tienda, buscar el usuario asociado
-          if (store) {
-            console.log("[Auth] Tienda encontrada con id:", store.id);
-            
-            // Verificar contraseña de la tienda
-            if (store.hashedPassword) {
-              const isPasswordValid = await compare(credentials.password, store.hashedPassword);
-              
-              if (!isPasswordValid) {
-                console.log("[Auth] Contraseña de tienda inválida");
-                return null;
-              }
-              
-              // Obtener datos del usuario asociado
-              const user = await prisma.user.findUnique({
-                where: { id: store.userId }
-              });
-              
-              if (!user) {
-                console.log("[Auth] Usuario de tienda no encontrado");
-                return null;
-              }
-              
-              return {
-                id: user.id,
-                email: user.email,
-                name: user.name || "",
-                role: user.role
-              };
-            }
-          } 
+          if (!store) {
+            console.log("Tienda no encontrada");
+            throw new Error("ID de tienda o contraseña incorrecta");
+          }
+
+          // Verificar contraseña
+          const isValid = await bcrypt.compare(
+            credentials.password,
+            store.hashedPassword || ""
+          );
+
+          if (!isValid) {
+            console.log("Contraseña incorrecta");
+            throw new Error("ID de tienda o contraseña incorrecta");
+          }
+
+          console.log("Autenticación exitosa");
           
-          // Si no se encontró tienda, buscar usuario directamente
-          const user = await prisma.user.findFirst({
-            where: {
-              email: credentials.username
-            }
-          });
-          
-          if (!user || !user.hashedPassword) {
-            console.log("[Auth] Usuario no encontrado o sin contraseña");
-            return null;
+          // Si el store tiene usuario asociado, usar esos datos
+          if (store.user) {
+            return {
+              id: store.user.id,
+              email: store.user.email,
+              name: store.user.name || store.name,
+              role: store.user.role
+            };
           }
           
-          // Verificar contraseña de usuario
-          const isPasswordValid = await compare(credentials.password, user.hashedPassword);
-          
-          if (!isPasswordValid) {
-            console.log("[Auth] Contraseña de usuario inválida");
-            return null;
-          }
-          
+          // Si no hay usuario asociado, usar datos de la tienda
           return {
-            id: user.id,
-            email: user.email,
-            name: user.name || "",
-            role: user.role
+            id: store.id,
+            email: store.email || "",
+            name: store.name,
+            role: "STORE" as UserRole
           };
-          
         } catch (error) {
-          console.error("[Auth] Error en authorize:", error);
-          return null;
+          console.error("Error en authorize:", error);
+          throw new Error("Error al autenticar. Por favor, inténtelo de nuevo.");
         }
       }
     })
   ],
-  session: {
-    strategy: "jwt"
-  },
-  pages: {
-    signIn: '/login',
-    error: '/login'
-  },
   callbacks: {
-    jwt: async ({ token, user }) => {
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
+        token.name = user.name;
         token.role = user.role;
       }
       return token;
     },
-    session: async ({ session, token }) => {
-      if (session.user) {
-        session.user.id = token.id;
-        session.user.role = token.role;
+    async session({ session, token }) {
+      if (token && session.user) {
+        session.user.id = token.id as string;
+        session.user.name = token.name as string;
+        session.user.role = token.role as UserRole;
       }
       return session;
     }
-  },
-  debug: process.env.NODE_ENV === "development"
+  }
 }; 
