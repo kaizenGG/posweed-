@@ -215,10 +215,10 @@ export default function ShopPage() {
     content: () => ticketRef.current,
     documentTitle: 'PosWeed-Ticket',
     onAfterPrint: () => {
-      toast.success('Ticket impreso con éxito');
+      toast.success('Ticket printed successfully');
     },
     onPrintError: () => {
-      toast.error('Error al imprimir. Intente de nuevo.');
+      toast.error('Error printing. Try again.');
       setShowTicketPreview(true);
     }
   });
@@ -232,24 +232,24 @@ export default function ShopPage() {
   // Función mejorada para cargar productos
   const fetchProducts = async () => {
     setIsLoading(true);
-    console.log("[Shop] Obteniendo productos...");
+    console.log("[Shop] Getting products...");
     
     try {
       const response = await fetch('/api/products');
       
       if (!response.ok) {
-        console.error(`[Shop] Error en la respuesta: ${response.status}`);
+        console.error(`[Shop] Error in response: ${response.status}`);
         setProducts([]);
         setIsLoading(false);
         return;
       }
       
       const text = await response.text();
-      console.log(`[Shop] Respuesta: ${text.substring(0, 100)}...`);
+      console.log(`[Shop] Response: ${text.substring(0, 100)}...`);
       
       // Manejo de respuestas vacías
       if (!text || text === '{}' || text === '') {
-        console.log("[Shop] Respuesta vacía, estableciendo productos como array vacío");
+        console.log("[Shop] Empty response, setting products as empty array");
         setProducts([]);
         setIsLoading(false);
         return;
@@ -257,36 +257,36 @@ export default function ShopPage() {
       
       try {
         const data = JSON.parse(text);
-        console.log("[Shop] Datos parseados:", data);
+        console.log("[Shop] Parsed data:", data);
         
         // Verificar estructura de la respuesta
         if (data?.success === true && Array.isArray(data.products)) {
           // Formato correcto
-          console.log(`[Shop] Productos obtenidos: ${data.products.length}`);
+          console.log(`[Shop] Products obtained: ${data.products.length}`);
           setProducts(data.products);
         } else if (data?.success === true && data.products === null) {
           // Productos es null
-          console.log("[Shop] products es null, estableciendo como array vacío");
+          console.log("[Shop] products is null, setting as empty array");
           setProducts([]);
         } else if (Array.isArray(data)) {
           // Es un array directamente
-          console.log(`[Shop] Array directo obtenido: ${data.length}`);
+          console.log(`[Shop] Direct array obtained: ${data.length}`);
           setProducts(data);
         } else if (data?.products && Array.isArray(data.products)) {
           // Tiene la propiedad products y es un array
-          console.log(`[Shop] Formato alternativo, productos: ${data.products.length}`);
+          console.log(`[Shop] Alternative format, products: ${data.products.length}`);
           setProducts(data.products);
         } else {
           // No es un formato reconocido
-          console.warn("[Shop] Los datos no tienen el formato esperado:", data);
+          console.warn("[Shop] Data doesn't have the expected format:", data);
           setProducts([]);
         }
       } catch (parseError) {
-        console.error("[Shop] Error al parsear la respuesta:", parseError);
+        console.error("[Shop] Error parsing response:", parseError);
         setProducts([]);
       }
     } catch (error) {
-      console.error("[Shop] Error al obtener productos:", error);
+      console.error("[Shop] Error getting products:", error);
       setProducts([]);
     }
     
@@ -296,7 +296,7 @@ export default function ShopPage() {
   // Función mejorada para cargar categorías
   const fetchCategories = async () => {
     try {
-      console.log("[Shop] Iniciando carga de categorías...");
+      console.log("[Shop] Starting category loading...");
       
       const response = await fetch("/api/categories", {
         headers: {
@@ -305,29 +305,29 @@ export default function ShopPage() {
       });
       
       if (!response.ok) {
-        console.error(`[Shop] Error al cargar categorías: ${response.status}`);
+        console.error(`[Shop] Error loading categories: ${response.status}`);
         setCategories([]);
         return;
       }
       
       // Obtener el texto completo para debug
       const responseText = await response.text();
-      console.log(`[Shop] Respuesta de API categorías (primeros 200 caracteres): ${responseText.substring(0, 200)}`);
+      console.log(`[Shop] Categories API response (first 200 characters): ${responseText.substring(0, 200)}`);
       
       let data;
       try {
         // Parsear el texto a JSON
         data = JSON.parse(responseText);
-        console.log(`[Shop] Datos de categorías parseados:`, data);
+        console.log(`[Shop] Parsed category data:`, data);
       } catch (error) {
-        console.error("[Shop] Error al parsear respuesta JSON de categorías:", error);
+        console.error("[Shop] Error parsing JSON response for categories:", error);
         setCategories([]);
         return;
       }
       
       // Verificar la estructura de la respuesta
       if (!data || typeof data !== 'object') {
-        console.error("[Shop] Formato de respuesta inválido:", data);
+        console.error("[Shop] Invalid response format:", data);
         setCategories([]);
         return;
       }
@@ -337,7 +337,7 @@ export default function ShopPage() {
       
       // Asegurarnos de que categoriesData sea un array
       if (!Array.isArray(categoriesData)) {
-        console.error("[Shop] Los datos de categorías no son un array:", categoriesData);
+        console.error("[Shop] Category data is not an array:", categoriesData);
         setCategories([]);
         return;
       }
@@ -348,13 +348,13 @@ export default function ShopPage() {
       );
       
       if (validCategories.length !== categoriesData.length) {
-        console.warn(`[Shop] Se filtraron ${categoriesData.length - validCategories.length} categorías con formato inválido`);
+        console.warn(`[Shop] Filtered ${categoriesData.length - validCategories.length} categories with invalid format`);
       }
       
       setCategories(validCategories);
-      console.log(`[Shop] ${validCategories.length} categorías cargadas y guardadas en estado`);
+      console.log(`[Shop] ${validCategories.length} categories loaded and saved in state`);
     } catch (error) {
-      console.error("[Shop] Error al cargar categorías:", error);
+      console.error("[Shop] Error loading categories:", error);
       setCategories([]);
     }
   };
@@ -398,7 +398,7 @@ export default function ShopPage() {
       }
     });
     
-    toast.success(`${product.name} añadido al carrito`);
+    toast.success(`${product.name} added to cart`);
   };
   
   const removeFromCart = (productId: string) => {
@@ -441,7 +441,7 @@ export default function ShopPage() {
       setNotificationState({
         visible: true,
         type: 'success',
-        message: 'Procesando venta...'
+        message: 'Processing sale...'
       });
       
       // Crear objeto de venta
@@ -485,7 +485,7 @@ export default function ShopPage() {
       setChange(0);
       
       // Mostrar toast de "procesando"
-      const loadingToast = toast.loading('Procesando venta...');
+      const loadingToast = toast.loading('Processing sale...');
       
       // Enviar datos al servidor
       const response = await fetch('/api/sales', {
@@ -501,18 +501,18 @@ export default function ShopPage() {
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Error al procesar la venta');
+        throw new Error(errorData.message || 'Error processing sale');
       }
       
       // Actualizar notificación de éxito
       setNotificationState({
         visible: true,
         type: 'success',
-        message: 'Venta completada con éxito'
+        message: 'Sale completed successfully'
       });
       
       // Mostrar mensaje de éxito persistente
-      toast.success('¡Venta completada con éxito!', {
+      toast.success('Sale completed successfully!', {
         duration: 5000,
         icon: '🎉'
       });
@@ -528,17 +528,17 @@ export default function ShopPage() {
       }, 5000);
       
     } catch (error) {
-      console.error('Error al procesar venta:', error);
+      console.error('Error processing sale:', error);
       
       // Actualizar notificación de error
       setNotificationState({
         visible: true,
         type: 'error',
-        message: error instanceof Error ? error.message : 'Error al procesar la venta'
+        message: error instanceof Error ? error.message : 'Error processing sale'
       });
       
       // Mostrar mensaje de error
-      toast.error('Error al procesar la venta', {
+      toast.error('Error processing sale', {
         duration: 5000
       });
       
@@ -613,7 +613,7 @@ export default function ShopPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full h-12 pl-10 pr-4 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="Buscar productos..."
+              placeholder="Search products..."
             />
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-5 w-5 text-gray-400" />
@@ -625,7 +625,7 @@ export default function ShopPage() {
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="h-12 px-4 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-gray-700"
           >
-            <option value="all">Todas las Categorías</option>
+            <option value="all">All Categories</option>
             {categories.map(category => (
               <option key={category.id} value={category.id}>
                 {category.name}
@@ -647,11 +647,11 @@ export default function ShopPage() {
           ) : filteredProducts.length === 0 ? (
             <div className="bg-white rounded-lg shadow p-8 text-center">
               <ShoppingCart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900">No se encontraron productos</h3>
+              <h3 className="text-lg font-medium text-gray-900">No products found</h3>
               <p className="mt-2 text-gray-500">
                 {searchQuery || selectedCategory !== "all"
-                  ? "Intenta con otros términos de búsqueda o categoría"
-                  : "Añade productos en la sección de gestión de productos"}
+                  ? "Try other search terms or category"
+                  : "Add products in the product management section"}
               </p>
             </div>
           ) : (
@@ -671,7 +671,7 @@ export default function ShopPage() {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gray-200">
-                        <span className="text-gray-400 text-lg">Sin imagen</span>
+                        <span className="text-gray-400 text-lg">No image</span>
                       </div>
                     )}
                   </div>
@@ -685,7 +685,7 @@ export default function ShopPage() {
                           ? getColorClass(product.categoryObj.color)
                           : "bg-gray-100 text-gray-800"
                       }`}>
-                        {product.categoryObj?.name || (typeof product.category === 'string' ? product.category : 'Sin categoría')}
+                        {product.categoryObj?.name || (typeof product.category === 'string' ? product.category : 'No category')}
                       </span>
                     </div>
                   </div>
@@ -701,7 +701,7 @@ export default function ShopPage() {
         <div className="p-3 border-b border-gray-200">
           <h2 className="text-lg font-bold flex items-center">
             <ShoppingCart className="h-5 w-5 mr-2" />
-            Venta Actual
+            Current Sale
           </h2>
         </div>
         
@@ -710,7 +710,7 @@ export default function ShopPage() {
           {cart.length === 0 ? (
             <div className="text-center py-4 text-gray-500">
               <ShoppingCart className="h-10 w-10 mx-auto mb-2 text-gray-300" />
-              <p>No hay productos</p>
+              <p>No products</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -786,7 +786,7 @@ export default function ShopPage() {
               disabled={cart.length === 0 || isProcessingSale}
               className="flex-1 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Limpiar
+              Clear
             </button>
             
             <button
@@ -797,10 +797,10 @@ export default function ShopPage() {
               {isProcessingSale ? (
                 <div className="flex items-center">
                   <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                  <span>Procesando...</span>
+                  <span>Processing...</span>
                 </div>
               ) : (
-                <span>Pagar ${cartTotal.toFixed(2)}</span>
+                <span>Pay ${cartTotal.toFixed(2)}</span>
               )}
             </button>
           </div>
@@ -812,14 +812,14 @@ export default function ShopPage() {
                 className="flex-1 py-2 bg-gray-700 text-white rounded-lg font-medium hover:bg-gray-800 flex items-center justify-center"
               >
                 <Printer className="w-4 h-4 mr-2" />
-                Imprimir
+                Print
               </button>
               <button
                 onClick={showTicketModal}
                 className="flex-1 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 flex items-center justify-center"
               >
                 <Eye className="w-4 h-4 mr-2" />
-                Vista Previa
+                Preview
               </button>
             </div>
           )}
@@ -831,7 +831,7 @@ export default function ShopPage() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-50 overflow-y-auto p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full animate-in fade-in duration-300 relative">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-xl font-bold text-gray-900">Confirmar Venta</h3>
+              <h3 className="text-xl font-bold text-gray-900">Confirm Sale</h3>
               <button 
                 onClick={() => setShowConfirmModal(false)}
                 className="text-gray-400 hover:text-gray-600 focus:outline-none"
@@ -844,7 +844,7 @@ export default function ShopPage() {
             
             <div className="p-6">
               <p className="text-gray-600 mb-4">
-                Por favor revisa los artículos antes de confirmar la venta
+                Please review the items before confirming the sale
               </p>
               
               <div className="space-y-2 mb-4">
@@ -946,7 +946,7 @@ export default function ShopPage() {
                 disabled={isProcessingSale}
                 className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-700 disabled:opacity-50"
               >
-                Cancelar
+                Cancel
               </button>
               <button
                 onClick={confirmPayment}
@@ -956,10 +956,10 @@ export default function ShopPage() {
                 {isProcessingSale ? (
                   <>
                     <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                    <span>Procesando...</span>
+                    <span>Processing...</span>
                   </>
                 ) : (
-                  <span>Confirmar Pago</span>
+                  <span>Confirm Payment</span>
                 )}
               </button>
             </div>
@@ -972,7 +972,7 @@ export default function ShopPage() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-50 overflow-y-auto p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full animate-in fade-in duration-300 relative flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-xl font-bold text-gray-900">Vista Previa del Ticket</h3>
+              <h3 className="text-xl font-bold text-gray-900">Receipt Preview</h3>
               <button 
                 onClick={() => setShowTicketPreview(false)}
                 className="text-gray-400 hover:text-gray-600 focus:outline-none"
@@ -1002,14 +1002,14 @@ export default function ShopPage() {
                 onClick={() => setShowTicketPreview(false)}
                 className="px-4 py-2 bg-white border border-gray-300 rounded text-gray-700"
               >
-                Cerrar
+                Close
               </button>
               <button
                 onClick={handlePrint}
                 className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center"
               >
                 <Printer className="w-4 h-4 mr-2" />
-                Imprimir
+                Print
               </button>
             </div>
           </div>
