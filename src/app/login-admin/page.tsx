@@ -97,15 +97,8 @@ export default function LoginAdmin() {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validación básica
-    if (!email || !password) {
-      setError("Todos los campos son obligatorios");
-      return;
-    }
-    
-    setError("");
     setIsLoading(true);
+    setError("");
     
     console.log("[Cliente Admin] Intentando login para administrador:", email);
     
@@ -124,7 +117,17 @@ export default function LoginAdmin() {
         console.error("[Cliente Admin] Error en login:", authResult.error);
       } else if (authResult?.ok) {
         console.log("[Cliente Admin] Login exitoso, redirigiendo...");
-        router.push('/dashboard-admin');
+        
+        // Esperar un momento antes de redirigir para asegurar que la sesión se establezca
+        setTimeout(() => {
+          // Usar push con revalidación completa para forzar recarga de datos
+          router.push('/dashboard-admin');
+          
+          // Como respaldo, también intentamos con location.href
+          setTimeout(() => {
+            window.location.href = '/dashboard-admin';
+          }, 500);
+        }, 300);
       }
     } catch (err) {
       console.error("[Cliente Admin] Error inesperado en login:", err);

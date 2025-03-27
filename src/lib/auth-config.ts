@@ -8,6 +8,7 @@ export const authOptions: NextAuthOptions = {
   debug: true, // Activar modo debug para ver logs detallados
   session: {
     strategy: "jwt",
+    maxAge: 24 * 60 * 60, // 24 horas
   },
   pages: {
     signIn: "/login", // Cambiar a la ruta real
@@ -21,7 +22,10 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials, req) {
-        console.log("Authorize llamado con credenciales:", credentials ? "Sí" : "No");
+        console.log("Authorize llamado con credenciales:", credentials ? JSON.stringify({
+          username: credentials.username,
+          passwordLength: credentials.password?.length || 0
+        }) : "No");
         
         if (!credentials?.username || !credentials?.password) {
           console.log("Credenciales incompletas");
@@ -31,53 +35,31 @@ export const authOptions: NextAuthOptions = {
         try {
           console.log(`Intentando autenticar a: ${credentials.username}`);
           
-          // Primero buscar usuario por email (para admin)
-          let user = await prisma.user.findFirst({
-            where: {
-              email: credentials.username
-            }
-          });
-
-          // Si no se encuentra, buscar tienda por username
-          let store = null;
-          if (!user) {
-            store = await prisma.store.findFirst({
+          // CASO 1: Autenticación de administrador por email
+          if (credentials.username.includes("@")) {
+            console.log("Intentando autenticación por email (administrador)");
+            const user = await prisma.user.findFirst({
               where: {
-                username: credentials.username
-              },
-              include: {
-                user: true
+                email: credentials.username
               }
             });
             
-            // Si tenemos tienda y tiene usuario, usar ese
-            if (store?.user) {
-              user = store.user;
-              console.log("Usuario encontrado a través de tienda");
+            if (!user || !user.hashedPassword) {
+              console.log("Usuario no encontrado o sin contraseña");
+              throw new Error("Usuario o contraseña incorrectos");
             }
-          } else {
-            console.log("Usuario encontrado directamente por email");
-          }
-          
-          // Si no se encuentra ni usuario ni tienda
-          if (!user && !store) {
-            console.log("No se encontró ni usuario ni tienda");
-            throw new Error("Usuario o contraseña incorrectos");
-          }
-
-          // Si tenemos un usuario, verificar contraseña del usuario
-          if (user && user.hashedPassword) {
+            
             const isValid = await bcrypt.compare(
               credentials.password,
               user.hashedPassword
             );
-
+            
             if (!isValid) {
               console.log("Contraseña de usuario incorrecta");
               throw new Error("Usuario o contraseña incorrectos");
             }
-
-            console.log("Autenticación de usuario exitosa");
+            
+            console.log("Autenticación de usuario exitosa:", user.role);
             return {
               id: user.id,
               email: user.email,
@@ -86,30 +68,56 @@ export const authOptions: NextAuthOptions = {
             };
           }
           
-          // Si tenemos una tienda pero no usuario, verificar contraseña de tienda
-          if (store && store.hashedPassword) {
-            const isValid = await bcrypt.compare(
-              credentials.password,
-              store.hashedPassword
-            );
-
-            if (!isValid) {
-              console.log("Contraseña de tienda incorrecta");
-              throw new Error("Usuario o contraseña incorrectos");
+          // CASO 2: Autenticación de tienda por username
+          console.log("Intentando autenticación por username (tienda)");
+          const store = await prisma.store.findFirst({
+            where: {
+              username: credentials.username
+            },
+            include: {
+              user: true
             }
-
-            console.log("Autenticación de tienda exitosa");
+          });
+          
+          if (!store) {
+            console.log("Tienda no encontrada para username:", credentials.username);
+            throw new Error("Usuario o contraseña incorrectos");
+          }
+          
+          // Verificar contraseña de la tienda
+          const isValid = await bcrypt.compare(
+            credentials.password,
+            store.hashedPassword || ""
+          );
+          
+          if (!isValid) {
+            console.log("Contraseña de tienda incorrecta");
+            throw new Error("Usuario o contraseña incorrectos");
+          }
+          
+          console.log("Autenticación de tienda exitosa:", store.id);
+          
+          // Si la tienda tiene usuario asociado, usar esa información
+          if (store.user) {
+            console.log("Usando datos del usuario asociado a la tienda:", store.user.id);
             return {
-              id: store.id,
-              email: store.email || store.username + "@posweed.com",
-              name: store.name || store.username,
-              role: "STORE" as UserRole
+              id: store.user.id,
+              email: store.user.email,
+              name: store.name,
+              role: store.user.role,
+              storeId: store.id // Añadir storeId para identificar mejor
             };
           }
           
-          // Si llegamos aquí, no hay forma de validar contraseña
-          console.log("No se pudo validar contraseña");
-          throw new Error("Usuario o contraseña incorrectos");
+          // Si no hay usuario, crear uno básico con los datos de la tienda
+          console.log("Usando datos directos de la tienda (sin usuario asociado)");
+          return {
+            id: store.id,
+            email: store.email || `${store.username}@posweed.com`,
+            name: store.name,
+            role: "STORE" as UserRole,
+            storeId: store.id
+          };
         } catch (error) {
           console.error("Error en authorize:", error);
           throw error;
@@ -124,6 +132,10 @@ export const authOptions: NextAuthOptions = {
         token.name = user.name;
         token.email = user.email;
         token.role = user.role;
+        // Añadir storeId si existe
+        if ('storeId' in user) {
+          token.storeId = user.storeId;
+        }
       }
       return token;
     },
@@ -133,6 +145,10 @@ export const authOptions: NextAuthOptions = {
         session.user.name = token.name as string;
         session.user.email = token.email as string;
         session.user.role = token.role as UserRole;
+        // Añadir storeId a la sesión si existe
+        if ('storeId' in token) {
+          session.user.storeId = token.storeId as string;
+        }
       }
       return session;
     }

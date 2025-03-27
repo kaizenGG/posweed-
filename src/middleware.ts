@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
 
 // Rutas públicas (no requieren autenticación)
 const publicRoutes = [
@@ -30,32 +31,69 @@ const isAdminDashboardRoute = (pathname: string) => {
 };
 
 // Middleware que se ejecuta en cada request
-export function middleware(request: NextRequest) {
-  const pathname = request.nextUrl.pathname;
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
   
-  // Permitir rutas públicas y APIs sin autenticación
-  if (isPublicRoute(pathname) || isApiRoute(pathname)) {
+  // Rutas públicas que no requieren autenticación
+  const publicRoutes = ['/login', '/login-admin', '/api/auth'];
+  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
+  
+  // Rutas que son sólo para admin
+  const isAdminDashboardRoute = pathname.startsWith('/dashboard-admin');
+  
+  // Rutas para tiendas (dashboard regular)
+  const isDashboardRoute = pathname.startsWith('/dashboard') && !isAdminDashboardRoute;
+  
+  // Si es una ruta pública, permitir acceso
+  if (isPublicRoute) {
     return NextResponse.next();
   }
   
-  // Sólo revisar que exista alguna cookie de sesión (sin validarla)
-  const hasSessionToken = request.cookies.has("session_token");
-  const hasAuthToken = request.cookies.has("auth_token");
-  
-  // Si no hay token, redireccionar a login
-  if (!hasSessionToken && !hasAuthToken) {
-    console.log("[Middleware] No hay cookie de sesión para ruta:", pathname);
-    
-    // Redireccionar a login según el tipo de ruta
-    if (pathname.startsWith("/dashboard-admin")) {
-      return NextResponse.redirect(new URL("/login-admin", request.url));
-    } else {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
+  // Si es una ruta de API, permitir acceso (la validación se hace en los endpoints)
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.next();
   }
   
-  // Si hay token, permitir continuar - la verificación más profunda
-  // se hará en los layouts de los dashboards
+  // Obtener token de sesión
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+  });
+  
+  // Depuración para ver el token
+  console.log(`Middleware: Ruta ${pathname}, Token:`, token ? JSON.stringify({
+    id: token.id,
+    role: token.role,
+    storeId: token.storeId || 'N/A'
+  }) : "No token");
+  
+  // Si no hay token y no es ruta pública, redirigir a login
+  if (!token) {
+    const url = new URL('/login', request.url);
+    url.searchParams.set('callbackUrl', encodeURI(pathname));
+    return NextResponse.redirect(url);
+  }
+  
+  // Si intenta acceder a dashboard-admin pero no es admin, redirigir a dashboard normal
+  if (isAdminDashboardRoute && token.role !== 'ADMIN') {
+    console.log('Acceso denegado: Intento de acceso a dashboard-admin por usuario no admin');
+    
+    // Si es una tienda, redirigir a dashboard de tienda
+    if (token.role === 'STORE') {
+      return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
+    
+    // Si no es admin ni tienda, redirigir a página de login
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+  
+  // Si intenta acceder al dashboard de tienda pero no es tienda ni admin, redirigir a login
+  if (isDashboardRoute && token.role !== 'STORE' && token.role !== 'ADMIN') {
+    console.log('Acceso denegado: Intento de acceso a dashboard por usuario que no es admin ni tienda');
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+  
+  // Permitir acceso para todos los demás casos
   return NextResponse.next();
 }
 

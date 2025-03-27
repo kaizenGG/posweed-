@@ -40,27 +40,37 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     
-    console.log("[Cliente] Intentando login para:", username);
+    console.log("[Cliente Tienda] Intentando login para:", username);
     
     try {
       // Intento de inicio de sesión con signIn de NextAuth
       const authResult = await signIn("credentials", {
         redirect: false,
-        username,
+        username, // Nombre de usuario de la tienda
         password
       });
       
-      console.log("[Cliente] Resultado de login NextAuth:", authResult);
+      console.log("[Cliente Tienda] Resultado de login NextAuth:", authResult);
       
       if (authResult?.error) {
         setError(authResult.error);
-        console.error("[Cliente] Error en login:", authResult.error);
+        console.error("[Cliente Tienda] Error en login:", authResult.error);
       } else if (authResult?.ok) {
-        console.log("[Cliente] Login exitoso, redirigiendo...");
-        router.push('/dashboard');
+        console.log("[Cliente Tienda] Login exitoso, redirigiendo...");
+        
+        // Esperar un momento antes de redirigir para asegurar que la sesión se establezca
+        setTimeout(() => {
+          // Usar push con revalidación completa para forzar recarga de datos
+          router.push('/dashboard');
+          
+          // Como respaldo, también intentamos con location.href
+          setTimeout(() => {
+            window.location.href = '/dashboard';
+          }, 500);
+        }, 300);
       }
     } catch (err) {
-      console.error("[Cliente] Error inesperado en login:", err);
+      console.error("[Cliente Tienda] Error inesperado en login:", err);
       setError("Ocurrió un error inesperado. Por favor intente nuevamente.");
     } finally {
       setLoading(false);
