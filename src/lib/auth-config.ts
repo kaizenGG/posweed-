@@ -4,15 +4,28 @@ import prisma from "./prisma";
 import bcrypt from "bcrypt";
 import { UserRole } from "@prisma/client";
 
+// Definir tipo para los datos de usuario extendidos que usamos en la autenticación
+interface ExtendedUser {
+  id: string;
+  name?: string | null;
+  email: string;
+  role: UserRole;
+  image?: string | null;
+  storeId?: string;
+  storeName?: string;
+  storeUsername?: string;
+}
+
 export const authOptions: NextAuthOptions = {
   debug: true, // Activar modo debug para ver logs detallados
   session: {
     strategy: "jwt",
-    maxAge: 24 * 60 * 60, // 24 horas
+    maxAge: 30 * 24 * 60 * 60, // 30 días para mayor persistencia
   },
   pages: {
     signIn: "/login", // Cambiar a la ruta real
     error: "/login", // Cambiar a la ruta real
+    signOut: "/login", // Asegurarse de tener una página de cierre de sesión
   },
   providers: [
     CredentialsProvider({
@@ -21,7 +34,7 @@ export const authOptions: NextAuthOptions = {
         username: { label: "Username/Email", type: "text" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials, req) {
+      async authorize(credentials, req): Promise<ExtendedUser | null> {
         console.log("🔐 [AUTH] Authorize llamado con credenciales:", credentials ? JSON.stringify({
           username: credentials.username,
           passwordLength: credentials.password?.length || 0
@@ -31,165 +44,188 @@ export const authOptions: NextAuthOptions = {
           console.log("❌ [AUTH] Credenciales incompletas");
           throw new Error("Por favor ingrese su usuario y contraseña");
         }
-
-        try {
-          // Limpiar espacios en blanco de las credenciales
-          const cleanUsername = credentials.username.trim();
-          
-          console.log(`🔍 [AUTH] Intentando autenticar a: ${cleanUsername}`);
-          
-          // CASO 1: Autenticación de administrador por email
-          if (cleanUsername.includes("@")) {
-            console.log("👑 [AUTH] Intentando autenticación por email (administrador)");
-            const user = await prisma.user.findFirst({
-              where: {
-                email: cleanUsername
+        
+        // Intentar determinar si es un login de administrador o de tienda
+        const isEmail = credentials.username.includes('@');
+        
+        if (isEmail) {
+          try {
+            // Caso de login de administrador (por email)
+            console.log("👑 [AUTH] Intentando login de administrador");
+            const admin = await prisma.user.findUnique({
+              where: { email: credentials.username },
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                hashedPassword: true,
+                role: true,
+                image: true
               }
             });
             
-            if (!user || !user.hashedPassword) {
-              console.log("❌ [AUTH] Usuario no encontrado o sin contraseña");
-              throw new Error("Usuario o contraseña incorrectos");
+            if (!admin || !admin.hashedPassword) {
+              console.log("❌ [AUTH] Administrador no encontrado o sin contraseña");
+              throw new Error("Credenciales inválidas");
             }
             
-            const isValid = await bcrypt.compare(
+            const isValidPassword = await bcrypt.compare(
               credentials.password,
-              user.hashedPassword
+              admin.hashedPassword
             );
             
-            if (!isValid) {
-              console.log("❌ [AUTH] Contraseña de usuario incorrecta");
-              throw new Error("Usuario o contraseña incorrectos");
+            if (!isValidPassword) {
+              console.log("❌ [AUTH] Contraseña incorrecta para administrador");
+              throw new Error("Credenciales inválidas");
             }
             
-            console.log("✅ [AUTH] Autenticación de usuario exitosa:", user.role);
+            console.log("✅ [AUTH] Login de administrador exitoso:", admin.email);
             return {
-              id: user.id,
-              email: user.email,
-              name: user.name || user.email.split('@')[0],
-              role: user.role
+              id: admin.id,
+              email: admin.email,
+              name: admin.name,
+              role: admin.role,
+              image: admin.image
             };
+          } catch (error) {
+            console.error("💥 [AUTH] Error en login de administrador:", error);
+            throw new Error("Error al verificar credenciales de administrador");
           }
-          
-          // CASO 2: Autenticación de tienda por username
-          console.log("🏪 [AUTH] Intentando autenticación por username (tienda)");
-          
-          // Búsqueda exhaustiva de la tienda
-          const store = await prisma.store.findFirst({
-            where: {
-              OR: [
-                { username: cleanUsername },
-                { username: { equals: cleanUsername, mode: 'insensitive' } },
-                { name: { equals: cleanUsername, mode: 'insensitive' } }
-              ]
-            },
-            include: {
-              user: true
+        } else {
+          try {
+            // Caso de login de tienda (por username)
+            console.log("🏪 [AUTH] Intentando login de tienda");
+            const store = await prisma.store.findUnique({
+              where: { username: credentials.username },
+              select: {
+                id: true,
+                name: true,
+                username: true,
+                hashedPassword: true, // Corregido para coincidir con el modelo
+                status: true,
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    role: true,
+                    image: true
+                  }
+                }
+              }
+            });
+            
+            if (!store || !store.hashedPassword) {
+              console.log("❌ [AUTH] Tienda no encontrada o sin contraseña");
+              throw new Error("Credenciales inválidas");
             }
-          });
-          
-          if (!store) {
-            console.log("❌ [AUTH] Tienda no encontrada para username:", cleanUsername);
-            throw new Error("Usuario o contraseña incorrectos");
-          }
-          
-          console.log("🏪 [AUTH] Tienda encontrada:", store.name, "ID:", store.id);
-          
-          // Verificar contraseña de la tienda
-          if (!store.hashedPassword) {
-            console.log("❌ [AUTH] La tienda no tiene contraseña configurada");
-            throw new Error("Esta cuenta no tiene contraseña configurada. Contacte al administrador.");
-          }
-          
-          // Caso especial para la tienda 'hola' que sabemos que acepta Admin123!
-          let isValid = false;
-          
-          if (store.username.toLowerCase() === 'hola') {
-            console.log("🔑 [AUTH] Aplicando verificación especial para tienda 'hola'");
-            // Primero probamos con la contraseña proporcionada
-            isValid = await bcrypt.compare(
+            
+            if (store.status !== "ACTIVE") {
+              console.log("❌ [AUTH] Tienda no activa:", store.status);
+              throw new Error("Esta tienda no está activa");
+            }
+            
+            const isValidPassword = await bcrypt.compare(
               credentials.password,
               store.hashedPassword
             );
             
-            // Si falla, probamos con Admin123! (según los resultados de la prueba)
-            if (!isValid && credentials.password !== 'Admin123!') {
-              console.log("🔄 [AUTH] Probando con contraseña alternativa para 'hola'");
-              isValid = credentials.password === 'Admin123!';
+            if (!isValidPassword) {
+              console.log("❌ [AUTH] Contraseña incorrecta para tienda");
+              throw new Error("Credenciales inválidas");
             }
-          } else {
-            // Para las demás tiendas, verificación normal
-            isValid = await bcrypt.compare(
-              credentials.password,
-              store.hashedPassword
-            );
-          }
-          
-          if (!isValid) {
-            console.log("❌ [AUTH] Contraseña de tienda incorrecta");
-            throw new Error("Usuario o contraseña incorrectos");
-          }
-          
-          console.log("✅ [AUTH] Autenticación de tienda exitosa:", store.id);
-          
-          // Si la tienda tiene usuario asociado, usar esa información
-          if (store.user) {
-            console.log("👤 [AUTH] Usando datos del usuario asociado a la tienda:", store.user.id);
+            
+            console.log("✅ [AUTH] Login de tienda exitoso:", store.username);
             return {
               id: store.user.id,
+              name: store.user.name,
               email: store.user.email,
-              name: store.name,
-              role: 'STORE', // Forzar rol STORE independientemente del rol del usuario
-              storeId: store.id // Añadir storeId para identificar mejor
+              role: store.user.role,
+              image: store.user.image,
+              storeId: store.id,
+              storeName: store.name,
+              storeUsername: store.username
             };
+          } catch (error) {
+            console.error("💥 [AUTH] Error en login de tienda:", error);
+            throw new Error("Error al verificar credenciales de tienda");
           }
-          
-          // Si no hay usuario, crear uno básico con los datos de la tienda
-          console.log("📝 [AUTH] Usando datos directos de la tienda (sin usuario asociado)");
-          return {
-            id: store.id,
-            email: store.email || `${store.username}@posweed.com`,
-            name: store.name,
-            role: "STORE" as UserRole,
-            storeId: store.id
-          };
-        } catch (error) {
-          console.error("💥 [AUTH] Error en authorize:", error);
-          throw error;
         }
       }
     })
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       console.log("🔄 [AUTH] Generando JWT", user ? "con usuario nuevo" : "actualizando existente");
+      
+      // Si hay un nuevo login, actualizar el token con todos los datos del usuario
       if (user) {
-        token.id = user.id;
-        token.name = user.name;
-        token.email = user.email;
-        token.role = user.role;
-        // Añadir storeId si existe
-        if ('storeId' in user) {
-          token.storeId = user.storeId;
-          console.log("🏪 [AUTH] Añadiendo storeId al token:", user.storeId);
+        const extendedUser = user as ExtendedUser;
+        token.id = extendedUser.id;
+        token.name = extendedUser.name;
+        token.email = extendedUser.email;
+        token.role = extendedUser.role;
+        
+        // Añadir datos de tienda si existen
+        if ('storeId' in extendedUser) {
+          token.storeId = extendedUser.storeId;
+          token.storeName = extendedUser.storeName;
+          token.storeUsername = extendedUser.storeUsername;
+          console.log("🏪 [AUTH] Añadiendo datos de tienda al token:", extendedUser.storeName);
         }
+        
+        // Añadir timestamp para verificar expiración manualmente si es necesario
+        token.createdAt = Date.now();
       }
+      
+      console.log("📦 [AUTH] JWT generado:", JSON.stringify({
+        id: token.id,
+        role: token.role,
+        storeId: token.storeId || 'N/A'
+      }));
+      
       return token;
     },
+    
     async session({ session, token }) {
       console.log("🔄 [AUTH] Actualizando sesión con datos del token");
+      
       if (token && session.user) {
+        // Copiar datos principales
         session.user.id = token.id as string;
         session.user.name = token.name as string;
         session.user.email = token.email as string;
         session.user.role = token.role as UserRole;
-        // Añadir storeId a la sesión si existe
+        
+        // Añadir datos de tienda si existen
         if ('storeId' in token) {
           session.user.storeId = token.storeId as string;
-          console.log("🏪 [AUTH] Añadiendo storeId a la sesión:", token.storeId);
+          session.user.storeName = token.storeName as string;
+          session.user.storeUsername = token.storeUsername as string;
+          console.log("🏪 [AUTH] Añadiendo datos de tienda a la sesión:", token.storeName);
         }
       }
+      
+      console.log("📦 [AUTH] Sesión actualizada:", JSON.stringify({
+        id: session.user.id,
+        role: session.user.role,
+        storeId: session.user.storeId || 'N/A'
+      }));
+      
       return session;
+    }
+  },
+  // Asegurar que las cookies se configuran correctamente en producción
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === "production" ? "__Secure-next-auth.session-token" : "next-auth.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 30 * 24 * 60 * 60 // 30 días
+      }
     }
   }
 }; 
