@@ -108,17 +108,55 @@ export default function LoginAdmin() {
       } else if (authResult?.ok) {
         console.log("✅ [ADMIN-LOGIN] Login exitoso, redirigiendo al dashboard admin...");
         
-        // Esperar un momento antes de redirigir para asegurar que la sesión se establezca
+        // Guardar token en localStorage como respaldo
+        if (authResult.url) {
+          const token = new URL(authResult.url).searchParams.get("callbackUrl");
+          if (token) {
+            localStorage.setItem("session_token", token);
+            console.log("🔑 [ADMIN-LOGIN] Token guardado en localStorage");
+          }
+        }
+        
+        // Manualmente establecer cookies para asegurar que estén presentes
+        const setSessionCookie = () => {
+          try {
+            // Obtener la cookie que NextAuth debería haber establecido
+            const nextAuthCookie = document.cookie
+              .split('; ')
+              .find(row => row.startsWith('next-auth.session-token=') || row.startsWith('__Secure-next-auth.session-token='));
+            
+            if (nextAuthCookie) {
+              const token = nextAuthCookie.split('=')[1];
+              // Crear nuestra cookie personalizada con el mismo valor
+              document.cookie = `session_token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+              document.cookie = `auth_token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+              console.log("🍪 [ADMIN-LOGIN] Cookies personalizadas establecidas manualmente");
+              return true;
+            }
+            return false;
+          } catch (e) {
+            console.error("❌ [ADMIN-LOGIN] Error al establecer cookies:", e);
+            return false;
+          }
+        };
+        
+        // Intentar establecer cookies y esperar un momento antes de redirigir
+        setSessionCookie();
         setTimeout(() => {
           try {
+            // Intentar establecer cookies nuevamente como segunda verificación
+            setSessionCookie();
+            
             // Usar push con revalidación completa para forzar recarga de datos
             router.push('/dashboard-admin');
             console.log("🚀 [ADMIN-LOGIN] Redirección iniciada con router.push");
             
-            // Como respaldo, también intentamos con location.href
+            // Como respaldo, también intentamos con location.href después de un breve retraso
             setTimeout(() => {
-              console.log("🔄 [ADMIN-LOGIN] Aplicando redirección de respaldo");
-              window.location.href = '/dashboard-admin';
+              if (setSessionCookie()) {
+                console.log("🔄 [ADMIN-LOGIN] Aplicando redirección de respaldo");
+                window.location.href = '/dashboard-admin';
+              }
             }, 1000);
           } catch (routerError) {
             console.error("❌ [ADMIN-LOGIN] Error en redirección con router:", routerError);
@@ -158,6 +196,7 @@ export default function LoginAdmin() {
               width={120}
               height={120}
               className="h-auto"
+              unoptimized
             />
           </div>
           

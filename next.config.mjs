@@ -15,6 +15,18 @@ const nextConfig = {
     DATABASE_URL: process.env.DATABASE_URL,
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
     NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+  },
+  // Configuración para imágenes
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'ui-avatars.com',
+        pathname: '/api/**',
+      },
+    ],
+    dangerouslyAllowSVG: true,
+    unoptimized: true, // Permite usar imágenes sin optimización
   }
 };
 

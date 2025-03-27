@@ -34,27 +34,49 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   
-  // Funcion para obtener cookie
-  const getCookie = (name: string) => {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) {
-      const cookie = parts.pop()?.split(';').shift();
-      console.log(`Cookie ${name} encontrada:`, cookie ? "sí" : "no");
-      return cookie;
-    }
-    console.log(`Cookie ${name} no encontrada`);
-    return null;
-  };
-  
   useEffect(() => {
     const verifyAdminSession = async () => {
       try {
         setIsLoading(true);
         console.log("Verificando sesión de administrador...");
         
-        // Intentar obtener el token de la sesión
-        const token = getCookie("session_token") || getCookie("auth_token");
+        // Función mejorada para obtener cookies
+        function getCookie(name: string) {
+          // Intentar desde document.cookie
+          const value = `; ${document.cookie}`;
+          const parts = value.split(`; ${name}=`);
+          if (parts.length === 2) {
+            const cookieValue = parts.pop()?.split(';').shift();
+            console.log(`Cookie ${name} encontrada:`, 
+              cookieValue ? `${cookieValue.substring(0, 10)}...` : "no value");
+            return cookieValue;
+          }
+          
+          console.log(`Cookie ${name} no encontrada`);
+          return null;
+        }
+        
+        // Buscar token en múltiples fuentes
+        let token = getCookie("session_token") || 
+                    getCookie("auth_token") || 
+                    getCookie("next-auth.session-token") ||
+                    getCookie("__Secure-next-auth.session-token");
+                    
+        // Si no se encuentra en cookies, buscar en localStorage
+        if (!token) {
+          try {
+            token = localStorage.getItem("session_token");
+            if (token) {
+              console.log("Token recuperado de localStorage");
+              // Si se encuentra en localStorage, recrear la cookie
+              document.cookie = `session_token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+              document.cookie = `auth_token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+              console.log("Cookies recreadas desde localStorage");
+            }
+          } catch (storageError) {
+            console.warn("Error al acceder a localStorage:", storageError);
+          }
+        }
         
         if (!token) {
           console.log("No se encontró token de sesión, redirigiendo a login");
@@ -77,6 +99,8 @@ export default function DashboardLayout({
           console.log("Error al verificar token:", data.message);
           document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
           document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+          document.cookie = "next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+          document.cookie = "__Secure-next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
           localStorage.removeItem("session_token");
           router.push("/login-admin");
           return;
@@ -88,23 +112,30 @@ export default function DashboardLayout({
           console.log("Usuario no es administrador:", user.role);
           document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
           document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+          document.cookie = "next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+          document.cookie = "__Secure-next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
           localStorage.removeItem("session_token");
           router.push("/login-admin?error=unauthorized");
           return;
         }
         
+        // Asegurarse de que las cookies estén establecidas correctamente
+        document.cookie = `session_token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+        document.cookie = `auth_token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+        localStorage.setItem("session_token", token);
+        
         console.log("Sesión de administrador verificada");
         setAdminData(user);
       } catch (error) {
         console.error("Error al verificar sesión:", error);
-        router.push("/login-admin");
+        router.push("/login-admin?error=session_error");
       } finally {
         setIsLoading(false);
       }
     };
     
     verifyAdminSession();
-  }, [router]);
+  }, [router, pathname]);
   
   // Si está cargando, mostrar pantalla de carga
   if (isLoading) {
@@ -155,6 +186,8 @@ export default function DashboardLayout({
     // Eliminar cookies y localStorage
     document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
     document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "__Secure-next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
     localStorage.removeItem("session_token");
     router.push("/login-admin");
   };
