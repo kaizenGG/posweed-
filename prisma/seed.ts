@@ -1,116 +1,83 @@
-import { PrismaClient, UserRole, StoreStatus } from "@prisma/client";
-import { hash } from "bcrypt";
+import { PrismaClient, UserRole } from "@prisma/client";
+import bcrypt from "bcrypt";
 
 // Inicializar Prisma Client
 const prisma = new PrismaClient();
 
 async function main() {
+  console.log("Iniciando seed de la base de datos...");
+
   try {
-    console.log("🌱 Iniciando proceso de seeding...");
-    
-    // Datos del administrador
-    const adminEmail = "admin@posweed.com";
-    const adminPassword = "Admin123!";
-    console.log("🔑 Hasheando contraseña del administrador...");
-    const hashedAdminPassword = await hash(adminPassword, 12);
-    console.log("💾 Hash generado:", hashedAdminPassword.substring(0, 20) + "...");
-
-    // Verificar si ya existe un usuario con este email
-    const existingAdmin = await prisma.user.findUnique({
-      where: { email: adminEmail }
+    // 1. Crear usuario administrador
+    const adminExists = await prisma.user.findFirst({
+      where: { email: "admin@posweed.com" }
     });
 
-    let adminUser;
-    
-    if (existingAdmin) {
-      console.log("👤 El usuario administrador ya existe:", existingAdmin.id);
-      adminUser = existingAdmin;
-    } else {
-      // Crear usuario administrador
-      console.log("👤 Creando usuario administrador...");
-      adminUser = await prisma.user.create({
+    if (!adminExists) {
+      const hashedPassword = await bcrypt.hash("admin123", 10);
+      
+      const admin = await prisma.user.create({
         data: {
-          email: adminEmail,
+          email: "admin@posweed.com",
           name: "Administrador",
-          hashedPassword: hashedAdminPassword,
-          role: UserRole.ADMIN,
-          image: "https://ui-avatars.com/api/?name=Admin&background=random"
+          hashedPassword,
+          role: "ADMIN" as UserRole,
         }
       });
-
-      console.log("✅ Usuario administrador creado con éxito:", adminUser);
-    }
-    
-    // Datos de tienda de prueba
-    const storeUsername = "tienda1";
-    const storePassword = "Tienda123!";
-    console.log("🔑 Hasheando contraseña de tienda...");
-    const hashedStorePassword = await hash(storePassword, 12);
-    console.log("💾 Hash generado para tienda:", hashedStorePassword.substring(0, 20) + "...");
-    
-    // Limpiar cualquier tienda existente con este username para evitar conflictos
-    console.log("🧹 Verificando si ya existe la tienda...");
-    const existingStore = await prisma.store.findUnique({
-      where: { username: storeUsername }
-    });
-    
-    if (existingStore) {
-      console.log("🗑️ Eliminando tienda existente:", existingStore.id);
-      await prisma.store.delete({
-        where: { id: existingStore.id }
-      });
-      console.log("✅ Tienda eliminada con éxito");
-    }
-    
-    // Crear tienda de prueba
-    console.log("🏪 Creando tienda de prueba...");
-    const store = await prisma.store.create({
-      data: {
-        name: "Tienda Prueba",
-        username: storeUsername,
-        hashedPassword: hashedStorePassword,
-        status: StoreStatus.ACTIVE,
-        address: "Calle de Prueba 123",
-        phone: "123456789",
-        email: "tienda@example.com",
-        image: "https://ui-avatars.com/api/?name=Tienda1&background=green",
-        user: {
-          connect: { id: adminUser.id } // Conectar con el usuario administrador
-        }
-      }
-    });
-    
-    console.log("✅ Tienda de prueba creada con éxito:", {
-      id: store.id,
-      name: store.name,
-      username: store.username,
-      userId: store.userId,
-      hashedPassword: store.hashedPassword.substring(0, 20) + "..."
-    });
-    
-    // Verificamos que se haya creado correctamente
-    const verifyStore = await prisma.store.findUnique({
-      where: { id: store.id },
-      include: { user: true }
-    });
-    
-    if (verifyStore && verifyStore.user) {
-      console.log("✅ Verificación de tienda exitosa:", {
-        id: verifyStore.id,
-        username: verifyStore.username,
-        userId: verifyStore.userId,
-        userName: verifyStore.user.name
-      });
+      
+      console.log("Usuario administrador creado:", admin.id);
     } else {
-      console.error("❌ Error: No se pudo verificar la tienda creada");
+      console.log("El usuario administrador ya existe");
     }
-    
-    console.log("🎉 Proceso de seeding completado con éxito");
+
+    // 2. Crear una tienda de prueba
+    const storeExists = await prisma.store.findFirst({
+      where: { username: "tienda1" }
+    });
+
+    if (!storeExists) {
+      const hashedPassword = await bcrypt.hash("tienda123", 10);
+      
+      // Crear un usuario asociado a la tienda
+      const storeUser = await prisma.user.create({
+        data: {
+          email: "tienda1@posweed.com",
+          name: "Tienda 1",
+          hashedPassword,
+          role: "STORE" as UserRole,
+        }
+      });
+      
+      // Crear la tienda
+      const store = await prisma.store.create({
+        data: {
+          name: "Tienda Prueba",
+          username: "tienda1",
+          email: "tienda1@posweed.com",
+          address: "Calle de Prueba 123",
+          phone: "123456789",
+          hashedPassword,
+          userId: storeUser.id,
+          image: "https://ui-avatars.com/api/?name=Tienda1",
+          status: "ACTIVE"
+        }
+      });
+      
+      console.log("Tienda creada:", store.id);
+    } else {
+      console.log("La tienda ya existe");
+    }
+
+    console.log("Seed completado con éxito");
   } catch (error) {
-    console.error("❌ Error al crear datos iniciales:", error);
+    console.error("Error durante el seed:", error);
   } finally {
     await prisma.$disconnect();
   }
 }
 
-main(); 
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  }); 
