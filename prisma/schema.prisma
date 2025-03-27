@@ -1,0 +1,280 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  name           String?
+  email          String   @unique
+  emailVerified  DateTime?
+  hashedPassword String?
+  image          String?
+  role           UserRole @default(USER)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  stores         Store[]
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  STORE
+}
+
+model Store {
+  id              String     @id @default(cuid())
+  name            String
+  description     String?
+  address         String?
+  phone           String?
+  email           String?
+  image           String?
+  username        String     @unique
+  hashedPassword  String
+  status          StoreStatus @default(ACTIVE)
+  databaseName    String?
+  databaseUrl     String?
+  databaseStatus  String?
+  invoiceCounter  Int        @default(0)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  userId          String
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products        Product[]
+  categories      Category[]
+  sales           Sale[]
+  rooms           Room[]
+  inventoryItems  InventoryItem[]
+  inventoryTransactions InventoryTransaction[]
+  suppliers       Supplier[]
+}
+
+enum StoreStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  ERROR_DB
+}
+
+model Category {
+  id              String    @id @default(cuid())
+  name            String
+  color           String
+  unit            String
+  stockAlert      String
+  
+  // Relationships
+  storeId         String
+  store           Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products        Product[]
+  
+  // Constraints
+  @@unique([storeId, name])
+  @@index([storeId])
+  @@map("categories")
+}
+
+model Product {
+  id                String   @id @default(cuid())
+  name              String
+  sku               String   @unique
+  price             Float
+  category          String?
+  description       String?
+  imageUrl          String?
+  priceStrategy     String?
+  stock             Int      @default(0)
+  lowStockThreshold Int?
+  isDeleted         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relation to Store
+  storeId           String
+  store             Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  // Relation to OrderItem
+  orderItems        OrderItem[]
+  
+  // Update category field to be a relation instead of just a string
+  categoryId        String?
+  categoryObj       Category?    @relation(fields: [categoryId], references: [id])
+  
+  saleItems         SaleItem[]
+  
+  // Relations for inventory
+  inventoryItems    InventoryItem[]
+  inventoryTransactions InventoryTransaction[]
+  
+  @@index([storeId])
+  @@index([category])
+  @@index([sku])
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  status      OrderStatus @default(PENDING)
+  total       Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  items       OrderItem[]
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  quantity  Int
+  price     Float
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+// Venta
+model Sale {
+  id             String    @id @default(cuid())
+  invoiceNumber  String
+  storeId        String
+  store          Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  total          Float
+  paymentMethod  String
+  cashReceived   Float?
+  change         Float?
+  status         String    @default("COMPLETED")
+  taxId          String?
+  cashierName    String?
+  items          SaleItem[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([storeId, invoiceNumber])
+}
+
+// Elemento de venta
+model SaleItem {
+  id          String   @id @default(cuid())
+  saleId      String
+  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  price       Float
+  subtotal    Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Salas de inventario
+model Room {
+  id          String   @id @default(cuid())
+  name        String
+  forSale     Boolean  @default(false)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  // Relaciones
+  inventoryItems InventoryItem[]
+  inventoryTransactions InventoryTransaction[]
+  
+  @@unique([storeId, name])
+  @@index([storeId])
+}
+
+// Inventario de productos por sala
+model InventoryItem {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  roomId      String
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  quantity    Float
+  avgCost     Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  // Transactions que afectan este inventario
+  transactions InventoryTransaction[]
+  
+  @@unique([productId, roomId, storeId])
+  @@index([storeId])
+  @@index([productId])
+  @@index([roomId])
+}
+
+// Transacciones de inventario (entradas y salidas)
+model InventoryTransaction {
+  id              String   @id @default(cuid())
+  type            TransactionType
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id])
+  roomId          String
+  room            Room     @relation(fields: [roomId], references: [id])
+  quantity        Float
+  cost            Float?
+  invoiceNumber   String?
+  supplierId      String?
+  supplier        Supplier? @relation(fields: [supplierId], references: [id])
+  notes           String?
+  createdAt       DateTime @default(now())
+  storeId         String
+  store           Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  // Relación con el registro de inventario
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  
+  @@index([storeId])
+  @@index([type])
+  @@index([productId])
+  @@index([roomId])
+  @@index([inventoryItemId])
+  @@index([supplierId])
+}
+
+enum TransactionType {
+  RESTOCK
+  TRANSFER
+  ADJUSTMENT
+  SALE
+}
+
+// Proveedores
+model Supplier {
+  id                    String   @id @default(cuid())
+  name                  String
+  contactName           String?
+  email                 String?
+  phone                 String?
+  address               String?
+  notes                 String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  storeId               String
+  store                 Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  inventoryTransactions InventoryTransaction[]
+  
+  @@index([storeId])
+}
