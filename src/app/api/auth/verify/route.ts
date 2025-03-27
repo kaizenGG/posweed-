@@ -18,9 +18,14 @@ export async function POST(req: NextRequest) {
       return await verifyExistingToken(body.token);
     }
     
-    // Caso 2: Generación de nuevo token con credenciales
+    // Caso 2: Generación de nuevo token con credenciales de administrador (email)
     if (body.email && body.password) {
       return await generateTokenWithCredentials(body.email, body.password);
+    }
+    
+    // Caso 3: Generación de nuevo token con credenciales de tienda (username)
+    if (body.username && body.password) {
+      return await generateTokenWithStoreCredentials(body.username, body.password);
     }
     
     // Si no se proporciona ni token ni credenciales
@@ -323,6 +328,133 @@ async function generateTokenWithCredentials(email: string, password: string) {
     console.error("[API Verify] Error al generar token con credenciales:", error);
     return NextResponse.json(
       { message: "Error al procesar las credenciales", error: String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+// Función para generar un token con credenciales de tienda
+async function generateTokenWithStoreCredentials(username: string, password: string) {
+  try {
+    console.log("[API Verify] Generando nuevo token para tienda:", username);
+    
+    // Buscar la tienda por username
+    const store = await prisma.store.findUnique({
+      where: { username },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        hashedPassword: true,
+        status: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            image: true
+          }
+        }
+      }
+    });
+    
+    if (!store || !store.hashedPassword) {
+      console.log("[API Verify] Tienda no encontrada o sin contraseña:", username);
+      return NextResponse.json(
+        { message: "Credenciales inválidas" },
+        { status: 401 }
+      );
+    }
+    
+    // Verificar si la tienda está activa
+    if (store.status !== "ACTIVE") {
+      console.log("[API Verify] Tienda no activa:", store.status);
+      return NextResponse.json(
+        { message: "Esta tienda no está activa" },
+        { status: 403 }
+      );
+    }
+    
+    // Verificar contraseña
+    const isValidPassword = await bcrypt.compare(
+      password,
+      store.hashedPassword
+    );
+    
+    if (!isValidPassword) {
+      console.log("[API Verify] Contraseña incorrecta para tienda");
+      return NextResponse.json(
+        { message: "Credenciales inválidas" },
+        { status: 401 }
+      );
+    }
+    
+    // Datos para el token
+    const tokenData = {
+      id: store.user.id,
+      name: store.user.name,
+      email: store.user.email,
+      role: store.user.role,
+      storeId: store.id
+    };
+    
+    // Generar token JWT
+    const token = sign(
+      tokenData,
+      process.env.NEXTAUTH_SECRET || "fallback-secret",
+      { expiresIn: "7d" }
+    );
+    
+    console.log("[API Verify] Nuevo token generado exitosamente para tienda:", store.name);
+    
+    // Preparar datos de usuario para la respuesta
+    const userResponse = {
+      id: store.user.id,
+      name: store.user.name,
+      email: store.user.email,
+      role: store.user.role,
+      storeId: store.id,
+      storeName: store.name,
+      storeUsername: store.username
+    };
+    
+    // Crear respuesta
+    const response = NextResponse.json({
+      user: userResponse,
+      token,
+      success: true,
+      message: "Token generado correctamente para tienda"
+    });
+    
+    // Establecer cookies
+    response.cookies.set({
+      name: "session_token",
+      value: token,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7, // 7 días
+      path: "/"
+    });
+    
+    response.cookies.set({
+      name: "auth_token",
+      value: token,
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7, // 7 días
+      path: "/"
+    });
+    
+    console.log("[API Verify] Cookies establecidas para el nuevo token de tienda");
+    
+    return response;
+  } catch (error) {
+    console.error("[API Verify] Error al generar token para tienda:", error);
+    return NextResponse.json(
+      { message: "Error al procesar las credenciales de tienda", error: String(error) },
       { status: 500 }
     );
   }
