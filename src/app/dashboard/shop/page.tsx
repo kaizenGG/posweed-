@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Search, Plus, Minus, ShoppingCart, X, CreditCard, Wallet, Smartphone, Check, AlertCircle } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Search, Plus, Minus, ShoppingCart, X, CreditCard, Wallet, Smartphone, Check, AlertCircle, Printer } from "lucide-react";
 import { toast, Toaster } from "react-hot-toast";
+import { useReactToPrint } from "react-to-print";
 
 // Color options - match the ones from the categories page
 const colorOptions = [
@@ -60,6 +61,113 @@ interface CartItem {
 // Tipos de pago
 type PaymentMethod = 'cash' | 'card' | 'promptpay';
 
+// Componente para el ticket de compra
+const TicketTemplate = React.forwardRef<HTMLDivElement, any>(({ saleData, storeInfo, cashReceived, change, paymentMethod }, ref) => {
+  const formatDate = (date: Date) => {
+    const d = new Date(date);
+    return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div ref={ref} className="p-1 w-[80mm] bg-white text-black text-xs font-mono" style={{ fontFamily: 'monospace' }}>
+      {/* Cabecera */}
+      <div className="flex justify-center mb-2">
+        {storeInfo?.image && (
+          <div className="flex justify-center mb-2">
+            <img src={storeInfo.image} alt="Logo" className="w-20 h-20 object-contain" />
+          </div>
+        )}
+      </div>
+      
+      <div className="text-center">
+        <p className="font-bold">{storeInfo?.name || "PosWeed"}</p>
+        <p>{storeInfo?.address || ""}</p>
+        {storeInfo?.phone && <p>Tel: {storeInfo.phone}</p>}
+        {storeInfo?.email && <p>{storeInfo.email}</p>}
+        <p>TAX ID: {storeInfo?.taxId || "0105567194501"}</p>
+      </div>
+      
+      <div className="border-t border-b border-dashed border-gray-400 my-2 py-1">
+        <p>Check-out Time: {formatDate(new Date())}</p>
+        <p>Receipt No.: {saleData?.invoiceNumber || new Date().getTime().toString()}</p>
+        <p>Cashier: {saleData?.cashierName || "Usuario"}</p>
+      </div>
+      
+      {/* Detalle de productos */}
+      <div className="border-b border-dashed border-gray-400 py-1">
+        <div className="flex justify-between font-bold">
+          <div className="w-1/2">Item</div>
+          <div className="w-1/6 text-right">Price</div>
+          <div className="w-1/6 text-right">Quantity</div>
+          <div className="w-1/6 text-right">Total</div>
+        </div>
+        
+        {saleData?.items.map((item, index) => (
+          <div key={index} className="flex justify-between text-[9px]">
+            <div className="w-1/2 truncate">{item.product.name}</div>
+            <div className="w-1/6 text-right">{item.price.toFixed(2)}</div>
+            <div className="w-1/6 text-right">{item.quantity}</div>
+            <div className="w-1/6 text-right">{(item.price * item.quantity).toFixed(2)}</div>
+          </div>
+        ))}
+      </div>
+      
+      {/* Totales */}
+      <div className="py-1">
+        <div className="flex justify-between">
+          <div>Sub-Total</div>
+          <div>{saleData?.total.toFixed(2)}</div>
+        </div>
+        <div className="flex justify-between">
+          <div>VAT</div>
+          <div>0.00</div>
+        </div>
+        {saleData?.discount > 0 && (
+          <div className="flex justify-between">
+            <div>Discount</div>
+            <div>-{saleData.discount.toFixed(2)}</div>
+          </div>
+        )}
+        <div className="flex justify-between font-bold">
+          <div>Total</div>
+          <div>{saleData?.total.toFixed(2)}</div>
+        </div>
+      </div>
+      
+      {/* Información de pago */}
+      <div className="border-t border-dashed border-gray-400 py-1">
+        <div className="flex justify-between">
+          <div>Payment Method</div>
+          <div>{paymentMethod === 'cash' ? 'Cash' : paymentMethod === 'card' ? 'Card' : 'PromptPay'}</div>
+        </div>
+        {paymentMethod === 'cash' && (
+          <>
+            <div className="flex justify-between">
+              <div>Cash Received</div>
+              <div>{parseFloat(cashReceived).toFixed(2)}</div>
+            </div>
+            <div className="flex justify-between">
+              <div>Change</div>
+              <div>{change.toFixed(2)}</div>
+            </div>
+          </>
+        )}
+      </div>
+      
+      {/* Pie de ticket */}
+      <div className="text-center border-t border-dashed border-gray-400 pt-2 mt-1">
+        <p>EXCHANGE ARE ALLOWED WITHIN</p>
+        <p>1 DAY WITH RECEIPT</p>
+        <p>STRICTLY NO CASH REFUND</p>
+        <p>VAT INCLUDED</p>
+        <p className="font-bold mt-1">THANK YOU</p>
+      </div>
+    </div>
+  );
+});
+
+TicketTemplate.displayName = 'TicketTemplate';
+
 export default function ShopPage() {
   // Estado para productos y categorías
   const [products, setProducts] = useState<Product[]>([]);
@@ -88,6 +196,14 @@ export default function ShopPage() {
     visible: false,
     type: 'success',
     message: ''
+  });
+  
+  // Ref para el ticket y función de impresión
+  const ticketRef = useRef();
+  const [ticketData, setTicketData] = useState(null);
+  
+  const handlePrint = useReactToPrint({
+    content: () => ticketRef.current,
   });
   
   // Cargar productos y categorías al montar el componente
@@ -311,19 +427,36 @@ export default function ShopPage() {
         message: 'Procesando venta...'
       });
       
-      // Crear objeto de venta (sin cambios)
+      // Crear objeto de venta
       const saleData = {
         items: cart.map(item => ({
           productId: item.product.id,
           quantity: item.quantity,
-          price: item.product.price
+          price: item.product.price,
+          product: item.product
         })),
         total: cartTotal,
         paymentMethod,
         cashReceived: paymentMethod === 'cash' ? parseFloat(cashReceived) : null,
         change: paymentMethod === 'cash' ? change : null,
-        date: new Date().toISOString()
+        date: new Date().toISOString(),
+        invoiceNumber: `${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}${new Date().getTime().toString().slice(-6)}`
       };
+      
+      // Guardar datos del ticket para impresión
+      setTicketData({
+        saleData,
+        storeInfo: {
+          name: "PosWeed Shop",
+          address: "Bangkok 10260",
+          phone: "0629200045",
+          email: "",
+          taxId: "0105567194501"
+        },
+        cashReceived,
+        change,
+        paymentMethod
+      });
       
       // Guardar una copia del carrito para el manejo optimista
       const previousCart = [...cart];
@@ -366,6 +499,11 @@ export default function ShopPage() {
         duration: 5000,
         icon: '🎉'
       });
+      
+      // Imprimir ticket automáticamente
+      setTimeout(() => {
+        handlePrint();
+      }, 500);
       
       // Ocultar notificación después de 5 segundos
       setTimeout(() => {
@@ -538,74 +676,57 @@ export default function ShopPage() {
       
       {/* Carrito de compras */}
       <div className="w-80 lg:w-96 bg-white border-l border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-3 border-b border-gray-200">
           <h2 className="text-lg font-bold flex items-center">
             <ShoppingCart className="h-5 w-5 mr-2" />
             Venta Actual
           </h2>
         </div>
         
-        {/* Productos en carrito */}
-        <div className="flex-1 overflow-y-auto p-4">
+        {/* Productos en carrito - versión compacta */}
+        <div className="flex-1 overflow-y-auto p-2 max-h-[500px]">
           {cart.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <ShoppingCart className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-              <p>No hay productos en la venta actual</p>
-              <p className="text-sm mt-2">Haz clic en un producto para añadirlo</p>
+            <div className="text-center py-4 text-gray-500">
+              <ShoppingCart className="h-10 w-10 mx-auto mb-2 text-gray-300" />
+              <p>No hay productos</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {cart.map(item => (
-                <div key={item.product.id} className="flex items-center bg-gray-50 p-2 rounded-lg relative">
+                <div key={item.product.id} className="flex items-center bg-gray-50 p-1.5 rounded-lg relative text-sm">
                   <button
                     onClick={() => removeFromCart(item.product.id)}
-                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"
                   >
                     <X className="h-3 w-3" />
                   </button>
                   
-                  {item.product.imageUrl ? (
-                    <div className="w-12 h-12 bg-white rounded overflow-hidden mr-3">
-                      <img 
-                        src={item.product.imageUrl} 
-                        alt={item.product.name}
-                        className="w-full h-full object-cover" 
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-12 h-12 bg-gray-200 rounded mr-3 flex items-center justify-center">
-                      <span className="text-2xl text-gray-400">
-                        {item.product.name.charAt(0)}
-                      </span>
-                    </div>
-                  )}
-                  
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 pr-1">
                     <h4 className="font-medium text-gray-900 truncate">{item.product.name}</h4>
-                    <p className="text-green-600">${item.product.price.toFixed(2)}</p>
+                    <p className="text-green-600 text-xs">${item.product.price.toFixed(2)}</p>
                   </div>
                   
-                  <div className="flex items-center border border-gray-300 rounded ml-2">
+                  <div className="flex items-center border border-gray-300 rounded ml-1">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         updateQuantity(item.product.id, item.quantity - 1);
                       }}
-                      className="px-2 py-1 text-gray-600 hover:bg-gray-100"
+                      className="px-1 py-0.5 text-gray-600 hover:bg-gray-100"
                     >
-                      <Minus className="h-4 w-4" />
+                      <Minus className="h-3 w-3" />
                     </button>
                     
-                    <span className="w-8 text-center">{item.quantity}</span>
+                    <span className="w-6 text-center text-xs">{item.quantity}</span>
                     
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         updateQuantity(item.product.id, item.quantity + 1);
                       }}
-                      className="px-2 py-1 text-gray-600 hover:bg-gray-100"
+                      className="px-1 py-0.5 text-gray-600 hover:bg-gray-100"
                     >
-                      <Plus className="h-4 w-4" />
+                      <Plus className="h-3 w-3" />
                     </button>
                   </div>
                 </div>
@@ -615,19 +736,8 @@ export default function ShopPage() {
         </div>
         
         {/* Resumen y acciones */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50">
-          <div className="flex items-center mb-4">
-            <span className="text-gray-600">%</span>
-            <input
-              type="number"
-              className="ml-2 w-24 p-2 border border-gray-300 rounded"
-              placeholder="0"
-              min="0"
-              max="100"
-            />
-          </div>
-          
-          <div className="flex justify-between items-center mb-4">
+        <div className="p-3 border-t border-gray-200 bg-gray-50">
+          <div className="flex justify-between items-center mb-3">
             <span className="font-medium text-lg">Total</span>
             <span className="font-bold text-xl">${cartTotal.toFixed(2)}</span>
           </div>
@@ -636,7 +746,7 @@ export default function ShopPage() {
             <button
               onClick={() => clearCart()}
               disabled={cart.length === 0 || isProcessingSale}
-              className="flex-1 py-3 bg-white border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Limpiar
             </button>
@@ -644,7 +754,7 @@ export default function ShopPage() {
             <button
               onClick={handlePayment}
               disabled={cart.length === 0 || isProcessingSale}
-              className="flex-1 py-3 bg-blue-900 text-white rounded-lg font-medium hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              className="flex-1 py-2 bg-blue-900 text-white rounded-lg font-medium hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
               {isProcessingSale ? (
                 <div className="flex items-center">
@@ -656,6 +766,16 @@ export default function ShopPage() {
               )}
             </button>
           </div>
+          
+          {ticketData && (
+            <button
+              onClick={handlePrint}
+              className="w-full mt-2 flex items-center justify-center py-2 bg-gray-700 text-white rounded-lg font-medium hover:bg-gray-800"
+            >
+              <Printer className="w-4 h-4 mr-2" />
+              Imprimir Ticket
+            </button>
+          )}
         </div>
       </div>
       
@@ -750,7 +870,9 @@ export default function ShopPage() {
                     Cash Received
                   </label>
                   <input
-                    type="text"
+                    type="number"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={cashReceived}
                     onChange={handleCashReceivedChange}
                     className="w-full p-2 border border-gray-300 rounded"
@@ -797,6 +919,20 @@ export default function ShopPage() {
           </div>
         </div>
       )}
+      
+      {/* Componente oculto para impresión */}
+      <div className="hidden">
+        {ticketData && (
+          <TicketTemplate 
+            ref={ticketRef} 
+            saleData={ticketData.saleData}
+            storeInfo={ticketData.storeInfo}
+            cashReceived={ticketData.cashReceived}
+            change={ticketData.change}
+            paymentMethod={ticketData.paymentMethod}
+          />
+        )}
+      </div>
     </div>
   );
 } 

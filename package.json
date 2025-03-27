@@ -27,6 +27,7 @@
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.54.2",
     "react-hot-toast": "^2.5.2",
+    "react-to-print": "^3.0.5",
     "shadcn-ui": "^0.9.5",
     "swr": "^2.3.3",
     "tailwind-merge": "^3.0.2",
