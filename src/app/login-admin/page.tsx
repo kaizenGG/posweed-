@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Shield } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
+import Image from "next/image";
 
 export default function LoginAdmin() {
   const [email, setEmail] = useState("");
@@ -11,6 +13,7 @@ export default function LoginAdmin() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [debug, setDebug] = useState<any>({});
   const router = useRouter();
   
   // Verificar si ya hay una sesión activa al cargar la página
@@ -59,6 +62,27 @@ export default function LoginAdmin() {
     checkExistingSession();
   }, [router]);
   
+  // Función para verificar la configuración y mostrar información de depuración
+  useEffect(() => {
+    async function checkConfig() {
+      try {
+        // Verificar la configuración de NextAuth
+        const response = await fetch("/api/auth/auth-debug");
+        const data = await response.json();
+        setDebug(data);
+        console.log("🔍 [DEBUG] Configuración de autenticación:", data);
+      } catch (err) {
+        console.error("🔴 [DEBUG] Error al verificar configuración:", err);
+        setDebug({error: String(err)});
+      }
+    }
+    
+    checkConfig();
+    
+    // Logs adicionales
+    console.log("🔍 [LOGIN-ADMIN] Verificando si ya existe una sesión activa...");
+  }, []);
+  
   // Función para establecer cookies de manera segura
   const setCookie = (name: string, value: string, days: number) => {
     let expires = "";
@@ -86,63 +110,26 @@ export default function LoginAdmin() {
     console.log("[Cliente Admin] Intentando login para administrador:", email);
     
     try {
-      const response = await fetch("/api/auth/sign-in", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: email,
-          password,
-          loginAsStore: false
-        }),
-        credentials: "include" // Importante para asegurar que las cookies se envíen
+      // Intento de inicio de sesión con NextAuth
+      const authResult = await signIn("credentials", {
+        redirect: false,
+        username: email, // Usar email como username para credenciales
+        password
       });
       
-      const data = await response.json();
+      console.log("[Cliente Admin] Resultado de login NextAuth:", authResult);
       
-      if (!response.ok) {
-        console.error("[Cliente Admin] Error en login:", data.message);
-        setError(data.message || "Error de autenticación");
-        setIsLoading(false);
-        return;
+      if (authResult?.error) {
+        setError(authResult.error);
+        console.error("[Cliente Admin] Error en login:", authResult.error);
+      } else if (authResult?.ok) {
+        console.log("[Cliente Admin] Login exitoso, redirigiendo...");
+        router.push('/dashboard-admin');
       }
-      
-      // Login exitoso
-      console.log("[Cliente Admin] Login exitoso para administrador");
-      
-      // Si hay un token en la respuesta, establecer cookies manuales
-      if (data.token) {
-        // Establecer la cookie con nuestra función personalizada (1 día de duración)
-        setCookie("session_token", data.token, 1);
-        console.log("[Cliente Admin] Cookie establecida en el cliente");
-        
-        // Establecer una segunda cookie de respaldo (por si acaso)
-        setCookie("auth_token", data.token, 1);
-        console.log("[Cliente Admin] Cookie de respaldo establecida");
-        
-        // Establecer también una cookie en localStorage como respaldo
-        try {
-          localStorage.setItem("session_token", data.token);
-          console.log("[Cliente Admin] Token guardado en localStorage como respaldo");
-        } catch (storageError) {
-          console.warn("[Cliente Admin] No se pudo guardar en localStorage:", storageError);
-        }
-        
-        // Esperar un poco más antes de redirigir (500ms)
-        setTimeout(() => {
-          console.log("[Cliente Admin] Redirigiendo a:", data.redirectUrl || "/dashboard-admin");
-          
-          // Usar navigate directo en lugar de window.location
-          window.location.href = data.redirectUrl || "/dashboard-admin";
-        }, 500);
-      } else {
-        console.error("[Cliente Admin] No se recibió token del servidor");
-        setError("Error de autenticación: No se recibió token");
-        setIsLoading(false);
-      }
-      
-    } catch (error) {
-      console.error("[Cliente Admin] Error de red:", error);
-      setError("Error de conexión. Intente de nuevo más tarde.");
+    } catch (err) {
+      console.error("[Cliente Admin] Error inesperado en login:", err);
+      setError("Ocurrió un error inesperado. Por favor intente nuevamente.");
+    } finally {
       setIsLoading(false);
     }
   };
@@ -164,20 +151,36 @@ export default function LoginAdmin() {
       <div className="flex flex-1 flex-col justify-center py-12 px-4 sm:px-6 lg:flex-none lg:px-20 xl:px-24">
         <div className="mx-auto w-full max-w-sm lg:w-96">
           <div className="flex justify-center">
-            <Shield className="h-10 w-10 text-indigo-600" />
+            <Image
+              src="/assets/logo.png"
+              alt="PosWeed Logo"
+              width={120}
+              height={120}
+              className="h-auto"
+            />
           </div>
           
           <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
             Iniciar sesión como Administrador
           </h2>
           
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm border border-red-200">
+              {error}
+            </div>
+          )}
+          
+          {/* Panel de depuración (visible solo en desarrollo) */}
+          {process.env.NODE_ENV !== "production" && (
+            <div className="mb-4 rounded border border-blue-400 bg-blue-50 p-3 text-blue-700 text-xs">
+              <h3 className="font-bold">Información de depuración:</h3>
+              <pre className="mt-2 overflow-auto">
+                {JSON.stringify(debug, null, 2)}
+              </pre>
+            </div>
+          )}
+          
           <div className="mt-8">
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm border border-red-200">
-                {error}
-              </div>
-            )}
-            
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700">
