@@ -68,12 +68,11 @@ const saveImage = async (image: File): Promise<string> => {
     // Create a unique filename with appropriate extension
     const timestamp = Date.now();
     const sanitizedName = image.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '');
-    const fileExtension = path.extname(sanitizedName).toLowerCase();
-    const baseFilename = path.basename(sanitizedName, fileExtension);
     
-    // Preferimos WebP para mejor compresión y calidad
-    const outputExtension = '.webp';
-    const uniqueFilename = `${timestamp}_${baseFilename}${outputExtension}`;
+    // Crear nombre único para el archivo - usando la extensión original para mayor compatibilidad
+    const originalExtension = path.extname(sanitizedName).toLowerCase() || '.jpg';
+    const baseFilename = path.basename(sanitizedName, originalExtension);
+    const uniqueFilename = `${timestamp}_${baseFilename}${originalExtension}`;
     
     const dirPath = path.join(process.cwd(), 'public', 'images', 'products');
     const imagePath = path.join(dirPath, uniqueFilename);
@@ -91,18 +90,48 @@ const saveImage = async (image: File): Promise<string> => {
       }
     }
     
-    // Configure image optimization options
-    const MAX_WIDTH = 1200;  // Tamaño máximo para ancho
-    const MAX_HEIGHT = 1200; // Tamaño máximo para alto
-    const QUALITY = 80;      // Calidad de compresión (0-100)
-    
-    console.log(`[API Products] Optimizing image: resizing to max ${MAX_WIDTH}x${MAX_HEIGHT}, quality: ${QUALITY}%`);
+    // Método simple - guardar el archivo sin optimización
+    // Este método es un fallback en caso de que la optimización falle
+    const saveOriginalImage = () => {
+      try {
+        console.log(`[API Products] Saving original image without optimization to: ${imagePath}`);
+        fs.writeFileSync(imagePath, buffer);
+        
+        // Verificar que el archivo se guardó correctamente
+        if (fs.existsSync(imagePath)) {
+          const stats = fs.statSync(imagePath);
+          console.log(`[API Products] File verified on disk, size: ${stats.size} bytes`);
+          
+          if (stats.size === 0) {
+            throw new Error("El archivo se creó pero está vacío");
+          }
+        } else {
+          throw new Error("El archivo no se encontró después de escribirlo");
+        }
+        
+        return `/images/products/${uniqueFilename}`;
+      } catch (error: any) {
+        console.error(`[API Products] Error saving original image: ${error}`);
+        throw error;
+      }
+    };
     
     try {
+      // Intentar usar Sharp para optimizar la imagen
+      console.log(`[API Products] Attempting to optimize image using Sharp`);
+      
+      // Como sharp puede fallar en algunos entornos, lo envolvemos en un try-catch
+      // y usamos el método simple como fallback
+      const outputExtension = '.webp'; // Preferimos WebP para mejor compresión
+      const optimizedFilename = `${timestamp}_${baseFilename}${outputExtension}`;
+      const optimizedPath = path.join(dirPath, optimizedFilename);
+      
+      // Configure image optimization options
+      const MAX_WIDTH = 1200;  // Tamaño máximo para ancho
+      const MAX_HEIGHT = 1200; // Tamaño máximo para alto
+      const QUALITY = 80;      // Calidad de compresión (0-100)
+      
       // Procesamiento con Sharp para optimizar la imagen
-      // 1. Redimensionar manteniendo relación de aspecto
-      // 2. Convertir a WebP para mejor compresión
-      // 3. Optimizar con compresión adecuada
       let sharpInstance = sharp(buffer);
       
       // Obtener metadatos para saber dimensiones originales
@@ -127,33 +156,35 @@ const saveImage = async (image: File): Promise<string> => {
         .toBuffer();
       
       // Guardar la imagen optimizada
-      console.log(`[API Products] Writing optimized image to: ${imagePath}`);
-      fs.writeFileSync(imagePath, optimizedImageBuffer);
+      console.log(`[API Products] Writing optimized image to: ${optimizedPath}`);
+      fs.writeFileSync(optimizedPath, optimizedImageBuffer);
       
       const optimizedSize = optimizedImageBuffer.length;
       const compressionRatio = buffer.length > 0 ? ((buffer.length - optimizedSize) / buffer.length * 100).toFixed(2) : 0;
       console.log(`[API Products] Image optimized: original ${buffer.length} bytes, optimized ${optimizedSize} bytes (${compressionRatio}% reduction)`);
       
       // Verificar que el archivo se guardó correctamente
-      if (fs.existsSync(imagePath)) {
-        const stats = fs.statSync(imagePath);
-        console.log(`[API Products] File verified on disk, size: ${stats.size} bytes`);
+      if (fs.existsSync(optimizedPath)) {
+        const stats = fs.statSync(optimizedPath);
+        console.log(`[API Products] Optimized file verified on disk, size: ${stats.size} bytes`);
         
         if (stats.size === 0) {
-          throw new Error("El archivo se creó pero está vacío");
+          throw new Error("El archivo optimizado se creó pero está vacío");
         }
       } else {
-        throw new Error("El archivo no se encontró después de escribirlo");
+        throw new Error("El archivo optimizado no se encontró después de escribirlo");
       }
+      
+      // Return the public URL for the optimized image
+      return `/images/products/${optimizedFilename}`;
+      
     } catch (error: any) {
-      console.error(`[API Products] Error processing image: ${error}`);
-      throw new Error(`Error al procesar y optimizar la imagen: ${error.message}`);
+      console.error(`[API Products] Error optimizing image with Sharp: ${error}`);
+      console.log(`[API Products] Falling back to standard image saving method`);
+      
+      // Si la optimización falla, usar el método simple
+      return saveOriginalImage();
     }
-    
-    // Return the public URL (using relative URL for better compatibility with deployment)
-    const publicUrl = `/images/products/${uniqueFilename}`;
-    console.log(`[API Products] Image saved successfully, public URL: ${publicUrl}`);
-    return publicUrl;
     
   } catch (error) {
     console.error(`[API Products] Error in saveImage function: ${error}`);
@@ -237,11 +268,28 @@ export async function GET() {
 // POST - Create a new product
 export async function POST(req: NextRequest) {
   try {
-    console.log("[API Products] Creating new product");
+    console.log("[API Products] Creating new product - Request started");
     
     // Verify authentication
-    const auth = await verifyAuth();
+    try {
+      const auth = await verifyAuth();
+      
+      if (!auth || !auth.storeId) {
+        console.error("[API Products] Error de autenticación:", !auth ? "No auth" : "No storeId");
+        return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+      }
+      
+      const storeId = auth.storeId;
+      console.log(`[API Products] Usuario verificado con storeId: ${storeId}`);
+    } catch (authError: any) {
+      console.error("[API Products] Error en autenticación:", authError);
+      return NextResponse.json({ 
+        error: "Error de autenticación", 
+        details: authError instanceof Error ? authError.message : "Error desconocido"
+      }, { status: 401 });
+    }
     
+    const auth = await verifyAuth();
     if (!auth || !auth.storeId) {
       console.error("[API Products] Error de autenticación:", !auth ? "No auth" : "No storeId");
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -275,17 +323,17 @@ export async function POST(req: NextRequest) {
             // Save the image and get its URL
             imageUrl = await saveImage(image);
             console.log(`[API Products] Image saved successfully, URL: ${imageUrl}`);
-          } catch (error) {
-            console.error("[API Products] Error saving image:", error);
+          } catch (imageError: any) {
+            console.error("[API Products] Error saving image:", imageError);
             return NextResponse.json({ 
               error: "Error al guardar la imagen", 
-              details: error instanceof Error ? error.message : "Error desconocido" 
+              details: imageError instanceof Error ? imageError.message : "Error desconocido" 
             }, { status: 500 });
           }
         } else {
           console.log("[API Products] No image found in form data or image is empty");
         }
-      } catch (formError) {
+      } catch (formError: any) {
         console.error("[API Products] Error parsing form data:", formError);
         return NextResponse.json({ 
           error: "Error al procesar el formulario", 
@@ -306,7 +354,7 @@ export async function POST(req: NextRequest) {
             formData.append(key, String(value));
           }
         });
-      } catch (jsonError) {
+      } catch (jsonError: any) {
         console.error("[API Products] Error parsing JSON data:", jsonError);
         return NextResponse.json({ 
           error: "Error al procesar los datos JSON", 
@@ -316,77 +364,113 @@ export async function POST(req: NextRequest) {
     }
     
     // Extract and validate data
-    const productData = {
-      name: formData.get("name") as string,
-      price: formData.get("price") as string,
-      categoryId: formData.get("categoryId") as string,
-      description: formData.get("description") as string || undefined,
-      lowStockThreshold: formData.get("lowStockThreshold") as string || undefined,
-      priceStrategy: formData.get("priceStrategy") as string || undefined
-    };
-    
-    console.log("[API Products] Validating product data:", productData);
-    
-    const validationResult = createProductSchema.safeParse(productData);
-    
-    if (!validationResult.success) {
-      console.log("[API Products] Validation failed:", validationResult.error);
+    try {
+      const productData = {
+        name: formData.get("name") as string,
+        price: formData.get("price") as string,
+        categoryId: formData.get("categoryId") as string,
+        description: formData.get("description") as string || undefined,
+        lowStockThreshold: formData.get("lowStockThreshold") as string || undefined,
+        priceStrategy: formData.get("priceStrategy") as string || undefined
+      };
+      
+      console.log("[API Products] Validating product data:", productData);
+      
+      const validationResult = createProductSchema.safeParse(productData);
+      
+      if (!validationResult.success) {
+        console.log("[API Products] Validation failed:", validationResult.error);
+        return NextResponse.json({ 
+          error: "Invalid product data", 
+          details: validationResult.error.format() 
+        }, { status: 400 });
+      }
+      
+      // Check if the category exists and belongs to the store
+      let category;
+      try {
+        category = await prisma.category.findUnique({
+          where: { id: productData.categoryId }
+        });
+      } catch (dbError: any) {
+        console.error("[API Products] Error al buscar la categoría en la base de datos:", dbError);
+        return NextResponse.json({ 
+          error: "Error en la base de datos", 
+          details: dbError instanceof Error ? dbError.message : "Error desconocido" 
+        }, { status: 500 });
+      }
+
+      if (!category) {
+        console.log(`[API Products] Category not found: ${productData.categoryId}`);
+        return NextResponse.json({ error: "Category not found" }, { status: 404 });
+      }
+
+      if (category.storeId !== storeId) {
+        console.log(`[API Products] Category ${productData.categoryId} belongs to store ${category.storeId}, not ${storeId}`);
+        return NextResponse.json({ error: "You don't have permission to use this category" }, { status: 403 });
+      }
+
+      // Generate a unique SKU
+      let sku;
+      try {
+        sku = await generateSKU(storeId, productData.name, category.name);
+        console.log(`[API Products] Generated SKU: ${sku}`);
+      } catch (skuError: any) {
+        console.error("[API Products] Error al generar SKU:", skuError);
+        return NextResponse.json({ 
+          error: "Error al generar SKU", 
+          details: skuError instanceof Error ? skuError.message : "Error desconocido" 
+        }, { status: 500 });
+      }
+      
+      // Create the product
+      const price = parseFloat(productData.price);
+      const lowStockThreshold = productData.lowStockThreshold 
+        ? parseInt(productData.lowStockThreshold) 
+        : undefined;
+      
+      let product;
+      try {
+        console.log(`[API Products] Creating product in database with name: ${productData.name}, price: ${price}, imageUrl: ${imageUrl || 'null'}`);
+        product = await prisma.product.create({
+          data: {
+            name: productData.name,
+            sku,
+            price,
+            category: category.name,
+            categoryId: productData.categoryId,
+            description: productData.description,
+            imageUrl,
+            priceStrategy: productData.priceStrategy,
+            stock: 0, // Initial stock is 0
+            lowStockThreshold,
+            storeId
+          }
+        });
+        
+        console.log(`[API Products] Product created successfully: ${product.id}`);
+      } catch (createError: any) {
+        console.error("[API Products] Error al crear el producto en la base de datos:", createError);
+        return NextResponse.json({ 
+          error: "Error al crear el producto en la base de datos", 
+          details: createError instanceof Error ? createError.message : "Error desconocido" 
+        }, { status: 500 });
+      }
+      
+      return NextResponse.json({
+        success: true,
+        message: "Product created successfully",
+        product
+      });
+    } catch (validationError: any) {
+      console.error("[API Products] Error en validación o procesamiento de datos:", validationError);
       return NextResponse.json({ 
-        error: "Invalid product data", 
-        details: validationResult.error.format() 
+        error: "Error en validación o procesamiento de datos", 
+        details: validationError instanceof Error ? validationError.message : "Error desconocido" 
       }, { status: 400 });
     }
-    
-    // Check if the category exists and belongs to the store
-    const category = await prisma.category.findUnique({
-      where: { id: productData.categoryId }
-    });
-
-    if (!category) {
-      console.log(`[API Products] Category not found: ${productData.categoryId}`);
-      return NextResponse.json({ error: "Category not found" }, { status: 404 });
-    }
-
-    if (category.storeId !== storeId) {
-      console.log(`[API Products] Category ${productData.categoryId} belongs to store ${category.storeId}, not ${storeId}`);
-      return NextResponse.json({ error: "You don't have permission to use this category" }, { status: 403 });
-    }
-
-    // Generate a unique SKU
-    const sku = await generateSKU(storeId, productData.name, category.name);
-    console.log(`[API Products] Generated SKU: ${sku}`);
-    
-    // Create the product
-    const price = parseFloat(productData.price);
-    const lowStockThreshold = productData.lowStockThreshold 
-      ? parseInt(productData.lowStockThreshold) 
-      : undefined;
-    
-    const product = await prisma.product.create({
-      data: {
-        name: productData.name,
-        sku,
-        price,
-        category: category.name,
-        categoryId: productData.categoryId,
-        description: productData.description,
-        imageUrl,
-        priceStrategy: productData.priceStrategy,
-        stock: 0, // Initial stock is 0
-        lowStockThreshold,
-        storeId
-      }
-    });
-    
-    console.log(`[API Products] Product created successfully: ${product.id}`);
-    
-    return NextResponse.json({
-      success: true,
-      message: "Product created successfully",
-      product
-    });
-  } catch (error) {
-    console.error("[API Products] Error creating product:", error);
+  } catch (error: any) {
+    console.error("[API Products] Error general al crear producto:", error);
     return NextResponse.json({ 
       error: "Error creating product", 
       details: error instanceof Error ? error.message : String(error)
