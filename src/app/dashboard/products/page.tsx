@@ -228,6 +228,28 @@ export default function ProductsPage() {
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
+    
+    if (!file) {
+      return;
+    }
+    
+    // Validar tipo de archivo
+    const validImageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"];
+    if (!validImageTypes.includes(file.type)) {
+      setError(`Tipo de archivo no válido. Por favor usa: JPG, PNG, GIF, WEBP o SVG`);
+      return;
+    }
+    
+    // Validar tamaño (max 5MB)
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      setError(`La imagen es demasiado grande (${(file.size / (1024 * 1024)).toFixed(2)}MB). El tamaño máximo es 5MB.`);
+      return;
+    }
+    
+    // Si todo está bien, actualizar el estado
+    setError(""); // Limpiar errores previos
+    console.log(`Imagen seleccionada: ${file.name}, tipo: ${file.type}, tamaño: ${file.size} bytes`);
     setNewProduct(prev => ({ ...prev, image: file }));
   };
 

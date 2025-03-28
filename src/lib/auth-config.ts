@@ -8,7 +8,7 @@ import { User } from "next-auth";
 // Definir tipo para los datos de usuario extendidos que usamos en la autenticación
 interface ExtendedUser extends User {
   id: string;
-  name: string | null;
+  name: string | undefined;
   email: string;
   role: UserRole;
   image?: string | null;

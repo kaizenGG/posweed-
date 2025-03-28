@@ -51,25 +51,70 @@ const createProductSchema = z.object({
 
 // Function to save uploaded image to the file system
 const saveImage = async (image: File): Promise<string> => {
-  const bytes = await image.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-  
-  // Create a unique filename
-  const uniqueFilename = `${Date.now()}_${image.name.replace(/\s+/g, '_')}`;
-  const imagePath = path.join(process.cwd(), 'public', 'images', 'products', uniqueFilename);
-  
-  // Ensure the directory exists
-  const dir = path.dirname(imagePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  try {
+    console.log(`[API Products] Starting image upload process for ${image.name}, size: ${image.size} bytes`);
+    
+    if (!image.size || image.size === 0) {
+      throw new Error("La imagen está vacía o corrupta");
+    }
+    
+    const bytes = await image.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    
+    console.log(`[API Products] Successfully read image data, buffer length: ${buffer.length}`);
+    
+    // Create a unique filename
+    const timestamp = Date.now();
+    const sanitizedName = image.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '');
+    const uniqueFilename = `${timestamp}_${sanitizedName}`;
+    
+    const dirPath = path.join(process.cwd(), 'public', 'images', 'products');
+    const imagePath = path.join(dirPath, uniqueFilename);
+    
+    // Ensure the directory exists
+    console.log(`[API Products] Checking if directory exists: ${dirPath}`);
+    if (!fs.existsSync(dirPath)) {
+      console.log(`[API Products] Directory doesn't exist, creating it: ${dirPath}`);
+      try {
+        fs.mkdirSync(dirPath, { recursive: true });
+        console.log(`[API Products] Directory created successfully`);
+      } catch (error: any) {
+        console.error(`[API Products] Error creating directory: ${error}`);
+        throw new Error(`No se pudo crear el directorio para guardar la imagen: ${error.message}`);
+      }
+    }
+    
+    // Write the file with explicit error handling
+    try {
+      console.log(`[API Products] Writing file to: ${imagePath}`);
+      fs.writeFileSync(imagePath, buffer);
+      console.log(`[API Products] File written successfully, size: ${buffer.length} bytes`);
+      
+      // Verify file was written correctly
+      if (fs.existsSync(imagePath)) {
+        const stats = fs.statSync(imagePath);
+        console.log(`[API Products] File verified on disk, size: ${stats.size} bytes`);
+        
+        if (stats.size === 0) {
+          throw new Error("El archivo se creó pero está vacío");
+        }
+      } else {
+        throw new Error("El archivo no se encontró después de escribirlo");
+      }
+    } catch (error: any) {
+      console.error(`[API Products] Error writing file: ${error}`);
+      throw new Error(`No se pudo guardar la imagen: ${error.message}`);
+    }
+    
+    // Return the public URL (using relative URL for better compatibility with deployment)
+    const publicUrl = `/images/products/${uniqueFilename}`;
+    console.log(`[API Products] Image saved successfully, public URL: ${publicUrl}`);
+    return publicUrl;
+    
+  } catch (error) {
+    console.error(`[API Products] Error in saveImage function: ${error}`);
+    throw error; // Re-throw to be handled by caller
   }
-  
-  // Write the file
-  fs.writeFileSync(imagePath, buffer);
-  console.log(`[API Products] Image saved to: ${imagePath}`);
-  
-  // Return the public URL
-  return `/images/products/${uniqueFilename}`;
 };
 
 // GET - Obtener todos los productos
@@ -163,37 +208,67 @@ export async function POST(req: NextRequest) {
     
     // Parse form data or JSON
     let formData: FormData;
-    let imageUrl = null;
+    let imageUrl: string | null = null;
     
-    // Check if the request is multipart form data
+    // Detect content type more robustly
     const contentType = req.headers.get("content-type") || "";
+    console.log(`[API Products] Request content type: ${contentType}`);
     
-    if (contentType.includes("multipart/form-data")) {
-      formData = await req.formData();
-      
-      // Handle image upload
-      const image = formData.get("image") as File | null;
-      if (image) {
-        console.log(`[API Products] Processing image upload: ${image.name}`);
-        try {
-          // Save the image and get its URL
-          imageUrl = await saveImage(image);
-          console.log(`[API Products] Image saved, URL: ${imageUrl}`);
-        } catch (error) {
-          console.error("[API Products] Error saving image:", error);
-          // Continue without image if there's an error
+    // Robust detection for multipart/form-data
+    const isMultipartForm = contentType.toLowerCase().includes("multipart/form-data");
+    
+    if (isMultipartForm) {
+      console.log("[API Products] Processing multipart form data");
+      try {
+        formData = await req.formData();
+        console.log(`[API Products] Form data keys: ${[...formData.keys()].join(', ')}`);
+        
+        // Handle image upload
+        const image = formData.get("image") as File | null;
+        if (image && image.size > 0) {
+          console.log(`[API Products] Found image in form data: ${image.name}, type: ${image.type}, size: ${image.size} bytes`);
+          try {
+            // Save the image and get its URL
+            imageUrl = await saveImage(image);
+            console.log(`[API Products] Image saved successfully, URL: ${imageUrl}`);
+          } catch (error) {
+            console.error("[API Products] Error saving image:", error);
+            return NextResponse.json({ 
+              error: "Error al guardar la imagen", 
+              details: error instanceof Error ? error.message : "Error desconocido" 
+            }, { status: 500 });
+          }
+        } else {
+          console.log("[API Products] No image found in form data or image is empty");
         }
+      } catch (formError) {
+        console.error("[API Products] Error parsing form data:", formError);
+        return NextResponse.json({ 
+          error: "Error al procesar el formulario", 
+          details: formError instanceof Error ? formError.message : "Error desconocido" 
+        }, { status: 400 });
       }
     } else {
-      const jsonData = await req.json();
-      formData = new FormData();
-      
-      // Convert JSON to FormData for consistent handling
-      Object.entries(jsonData).forEach(([key, value]) => {
-        if (value !== null && value !== undefined) {
-          formData.append(key, String(value));
-        }
-      });
+      console.log("[API Products] Processing JSON data");
+      try {
+        const jsonData = await req.json();
+        console.log("[API Products] JSON data received:", JSON.stringify(jsonData).substring(0, 200) + "...");
+        
+        formData = new FormData();
+        
+        // Convert JSON to FormData for consistent handling
+        Object.entries(jsonData).forEach(([key, value]) => {
+          if (value !== null && value !== undefined) {
+            formData.append(key, String(value));
+          }
+        });
+      } catch (jsonError) {
+        console.error("[API Products] Error parsing JSON data:", jsonError);
+        return NextResponse.json({ 
+          error: "Error al procesar los datos JSON", 
+          details: jsonError instanceof Error ? jsonError.message : "Error desconocido" 
+        }, { status: 400 });
+      }
     }
     
     // Extract and validate data
