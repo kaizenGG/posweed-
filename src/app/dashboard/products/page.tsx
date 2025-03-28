@@ -250,6 +250,25 @@ export default function ProductsPage() {
     // Si todo está bien, actualizar el estado
     setError(""); // Limpiar errores previos
     console.log(`Imagen seleccionada: ${file.name}, tipo: ${file.type}, tamaño: ${file.size} bytes`);
+    
+    // Mostrar mensaje informativo sobre la optimización
+    const infoMessage = document.createElement('div');
+    infoMessage.className = 'text-xs text-green-600 mt-1';
+    infoMessage.innerHTML = `
+      <span class="font-medium">Optimización:</span> La imagen será automáticamente optimizada:
+      <ul class="list-disc list-inside ml-1 mt-0.5">
+        <li>Convertida a formato WebP para mejor calidad/tamaño</li>
+        <li>Redimensionada si excede 1200x1200px</li>
+        <li>Comprimida para rendimiento óptimo</li>
+      </ul>
+    `;
+    
+    // Reemplazar el mensaje "No image selected" con este nuevo mensaje
+    const noImageText = document.querySelector('#product-image-container p');
+    if (noImageText) {
+      noImageText.replaceWith(infoMessage);
+    }
+    
     setNewProduct(prev => ({ ...prev, image: file }));
   };
 
@@ -598,7 +617,7 @@ export default function ProductsPage() {
                 <form onSubmit={handleAddProduct}>
                   <div className="p-5 space-y-4">
                     {/* Image Selection */}
-                    <div className="flex flex-col items-center mb-4">
+                    <div className="flex flex-col items-center mb-4" id="product-image-container">
                       <div className="w-32 h-32 border border-gray-300 rounded-md flex items-center justify-center mb-2 bg-gray-50">
                         {newProduct.image ? (
                           <img 

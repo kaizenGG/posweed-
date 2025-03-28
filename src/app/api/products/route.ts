@@ -5,6 +5,7 @@ import { verifyJwtAccessToken } from "@/lib/jwt";
 import fs from 'fs';
 import path from 'path';
 import { verifyAuth } from "@/lib/auth";
+import sharp from 'sharp';
 
 // Generate a unique SKU for a product
 const generateSKU = async (storeId: string, productName: string, category: string) => {
@@ -49,7 +50,7 @@ const createProductSchema = z.object({
   priceStrategy: z.string().optional()
 });
 
-// Function to save uploaded image to the file system
+// Function to save uploaded image to the file system with optimization
 const saveImage = async (image: File): Promise<string> => {
   try {
     console.log(`[API Products] Starting image upload process for ${image.name}, size: ${image.size} bytes`);
@@ -58,15 +59,21 @@ const saveImage = async (image: File): Promise<string> => {
       throw new Error("La imagen está vacía o corrupta");
     }
     
+    // Leer datos de la imagen
     const bytes = await image.arrayBuffer();
     const buffer = Buffer.from(bytes);
     
     console.log(`[API Products] Successfully read image data, buffer length: ${buffer.length}`);
     
-    // Create a unique filename
+    // Create a unique filename with appropriate extension
     const timestamp = Date.now();
     const sanitizedName = image.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '');
-    const uniqueFilename = `${timestamp}_${sanitizedName}`;
+    const fileExtension = path.extname(sanitizedName).toLowerCase();
+    const baseFilename = path.basename(sanitizedName, fileExtension);
+    
+    // Preferimos WebP para mejor compresión y calidad
+    const outputExtension = '.webp';
+    const uniqueFilename = `${timestamp}_${baseFilename}${outputExtension}`;
     
     const dirPath = path.join(process.cwd(), 'public', 'images', 'products');
     const imagePath = path.join(dirPath, uniqueFilename);
@@ -84,13 +91,50 @@ const saveImage = async (image: File): Promise<string> => {
       }
     }
     
-    // Write the file with explicit error handling
+    // Configure image optimization options
+    const MAX_WIDTH = 1200;  // Tamaño máximo para ancho
+    const MAX_HEIGHT = 1200; // Tamaño máximo para alto
+    const QUALITY = 80;      // Calidad de compresión (0-100)
+    
+    console.log(`[API Products] Optimizing image: resizing to max ${MAX_WIDTH}x${MAX_HEIGHT}, quality: ${QUALITY}%`);
+    
     try {
-      console.log(`[API Products] Writing file to: ${imagePath}`);
-      fs.writeFileSync(imagePath, buffer);
-      console.log(`[API Products] File written successfully, size: ${buffer.length} bytes`);
+      // Procesamiento con Sharp para optimizar la imagen
+      // 1. Redimensionar manteniendo relación de aspecto
+      // 2. Convertir a WebP para mejor compresión
+      // 3. Optimizar con compresión adecuada
+      let sharpInstance = sharp(buffer);
       
-      // Verify file was written correctly
+      // Obtener metadatos para saber dimensiones originales
+      const metadata = await sharpInstance.metadata();
+      console.log(`[API Products] Original image: ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
+      
+      // Si la imagen es más grande que los límites, redimensionarla
+      if ((metadata.width && metadata.width > MAX_WIDTH) || 
+          (metadata.height && metadata.height > MAX_HEIGHT)) {
+        console.log(`[API Products] Resizing image as it exceeds maximum dimensions`);
+        sharpInstance = sharpInstance.resize({
+          width: MAX_WIDTH,
+          height: MAX_HEIGHT,
+          fit: 'inside',
+          withoutEnlargement: true
+        });
+      }
+      
+      // Convertir a WebP y aplicar compresión
+      const optimizedImageBuffer = await sharpInstance
+        .webp({ quality: QUALITY })
+        .toBuffer();
+      
+      // Guardar la imagen optimizada
+      console.log(`[API Products] Writing optimized image to: ${imagePath}`);
+      fs.writeFileSync(imagePath, optimizedImageBuffer);
+      
+      const optimizedSize = optimizedImageBuffer.length;
+      const compressionRatio = buffer.length > 0 ? ((buffer.length - optimizedSize) / buffer.length * 100).toFixed(2) : 0;
+      console.log(`[API Products] Image optimized: original ${buffer.length} bytes, optimized ${optimizedSize} bytes (${compressionRatio}% reduction)`);
+      
+      // Verificar que el archivo se guardó correctamente
       if (fs.existsSync(imagePath)) {
         const stats = fs.statSync(imagePath);
         console.log(`[API Products] File verified on disk, size: ${stats.size} bytes`);
@@ -102,8 +146,8 @@ const saveImage = async (image: File): Promise<string> => {
         throw new Error("El archivo no se encontró después de escribirlo");
       }
     } catch (error: any) {
-      console.error(`[API Products] Error writing file: ${error}`);
-      throw new Error(`No se pudo guardar la imagen: ${error.message}`);
+      console.error(`[API Products] Error processing image: ${error}`);
+      throw new Error(`Error al procesar y optimizar la imagen: ${error.message}`);
     }
     
     // Return the public URL (using relative URL for better compatibility with deployment)
